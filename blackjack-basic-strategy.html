@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blackjack — Play &amp; Basic Strategy</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --plane:          #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --muted:          #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    /* categorical action palette — slots 1/2/3 (blue/orange/aqua), validated all-pairs */
+    --act-s:          #2a78d6;   /* stand    */
+    --act-d:          #eb6834;   /* double   */
+    --act-p:          #1baf7a;   /* split    */
+    --act-h:          #e1e0d9;   /* hit — neutral baseline, not a slot */
+    --ink-on-s:       #ffffff;
+    --ink-on-d:       #0b0b0b;
+    --ink-on-p:       #0b0b0b;
+    --ink-on-h:       #0b0b0b;
+    --good:           #1baf7a;
+    --bad:            #e34948;
+    --felt:           #eef1ee;
+    --accent:         #184f95;
+    --card-face:      #ffffff;
+    --card-edge:      #c3c2b7;
+    --card-back:      #184f95;
+    --suit-red:       #d03b3b;
+    --hatch:          rgba(11,11,11,0.30);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --plane:          #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted:          #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --border:         rgba(255,255,255,0.10);
+      --act-s:          #3987e5;
+      --act-d:          #d95926;
+      --act-p:          #199e70;
+      --act-h:          #2c2c2a;
+      --ink-on-s:       #0b0b0b;
+      --ink-on-d:       #0b0b0b;
+      --ink-on-p:       #0b0b0b;
+      --ink-on-h:       #c3c2b7;
+      --good:           #199e70;
+      --bad:            #e66767;
+      --felt:           #202221;
+      --accent:         #3987e5;
+      --card-face:      #f0efec;
+      --card-edge:      #383835;
+      --card-back:      #1c5cab;
+      --suit-red:       #c0392b;
+      --hatch:          rgba(255,255,255,0.34);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --plane:          #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted:          #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+    --act-s:          #3987e5;
+    --act-d:          #d95926;
+    --act-p:          #199e70;
+    --act-h:          #2c2c2a;
+    --ink-on-s:       #0b0b0b;
+    --ink-on-d:       #0b0b0b;
+    --ink-on-p:       #0b0b0b;
+    --ink-on-h:       #c3c2b7;
+    --good:           #199e70;
+    --bad:            #e66767;
+    --felt:           #202221;
+    --accent:         #3987e5;
+    --card-face:      #f0efec;
+    --card-edge:      #383835;
+    --card-back:      #1c5cab;
+    --suit-red:       #c0392b;
+    --hatch:          rgba(255,255,255,0.34);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--plane);
+    color: var(--text-primary);
+  }
+  .viz-root { background: var(--plane); color: var(--text-primary); min-height: 100vh; padding: 20px; }
+
+  header.page { max-width: 1180px; margin: 0 auto 14px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  header.page > div:first-child { flex: 1 1 520px; }
+  header.page h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header.page p { margin: 2px 0 0; font-size: 13px; color: var(--text-secondary); max-width: 62ch; }
+  header.page .spacer { flex: 1 1 40px; }
+
+  .controls { max-width: 1180px; margin: 0 auto 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    font: inherit; font-size: 12px; line-height: 1;
+    padding: 7px 11px; border-radius: 7px;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--axis); }
+  .btn:disabled { opacity: .36; cursor: not-allowed; }
+  .btn[aria-pressed="true"], .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .btn[aria-pressed="true"], :root[data-theme="dark"] .btn.active { color: #0b0b0b; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
+  :root[data-theme="dark"] .btn.primary { color: #0b0b0b; }
+  .btn.big { font-size: 13px; padding: 10px 15px; font-weight: 650; }
+  .ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 2px; }
+  .sel {
+    font: inherit; font-size: 12px; padding: 6px 8px; border-radius: 7px;
+    background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  }
+
+  .layout { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: minmax(430px, 1.15fr) minmax(330px, 0.85fr); align-items: start; }
+  @media (max-width: 1040px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel h2 { font-size: 13px; margin: 0 0 2px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-secondary); }
+  .panel .sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+  /* ---------- felt / table ---------- */
+  .felt {
+    background: var(--felt); border: 1px solid var(--grid); border-radius: 12px;
+    padding: 16px 14px; display: grid; gap: 12px; min-height: 330px;
+    grid-template-rows: auto 1fr auto;
+  }
+  .side { display: flex; flex-direction: column; gap: 7px; }
+  .side-hd { display: flex; align-items: baseline; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .side-hd .tot {
+    font-size: 15px; font-weight: 680; letter-spacing: -0.01em; color: var(--text-primary);
+    text-transform: none; font-variant-numeric: tabular-nums;
+  }
+  .side-hd .tot.bust { color: var(--bad); }
+  .hands { display: flex; gap: 14px; flex-wrap: wrap; }
+  .hand {
+    border: 2px solid transparent; border-radius: 10px; padding: 7px 8px 6px;
+    display: flex; flex-direction: column; gap: 5px; min-width: 96px;
+  }
+  .hand.live { border-color: var(--accent); background: var(--surface-1); }
+  .hand.settled { opacity: .72; }
+  .hand-meta { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; gap: 6px; align-items: center; }
+  .hand-meta .res { font-weight: 700; letter-spacing: .03em; text-transform: uppercase; font-size: 9.5px; }
+  .hand-meta .res.win { color: var(--good); } .hand-meta .res.lose { color: var(--bad); }
+  .hand-meta .res.push { color: var(--muted); }
+  .cardrow { display: flex; gap: 4px; min-height: 68px; }
+
+  .card {
+    width: 46px; height: 66px; flex: 0 0 auto; border-radius: 6px;
+    background: var(--card-face); border: 1px solid var(--card-edge);
+    position: relative; display: grid; place-items: center;
+    font-variant-numeric: tabular-nums; color: #0b0b0b;
+    box-shadow: 0 1px 3px rgba(0,0,0,.14);
+    animation: dealin .18s ease-out;
+  }
+  @keyframes dealin { from { transform: translateY(-9px) scale(.94); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
+  .card .r { font-size: 17px; font-weight: 700; line-height: 1; }
+  .card .s { font-size: 15px; line-height: 1; margin-top: 1px; }
+  .card .c { position: absolute; top: 3px; left: 4px; font-size: 9.5px; font-weight: 700; line-height: 1; }
+  .card.red { color: var(--suit-red); }
+  .card.down {
+    background: var(--card-back); border-color: var(--card-back);
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.14) 0 3px, transparent 3px 7px);
+  }
+  .card.small { width: 34px; height: 48px; }
+  .card.small .r { font-size: 13px; } .card.small .s { font-size: 11px; } .card.small .c { display: none; }
+
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 38px; }
+  .actions .kb { font-size: 9.5px; opacity: .6; margin-left: 4px; }
+  .msg { font-size: 12.5px; color: var(--text-secondary); min-height: 18px; margin: 0; }
+  .msg b { color: var(--text-primary); }
+
+  /* ---------- stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 2px; }
+  .tile { background: var(--plane); padding: 9px 10px; border-radius: 4px; }
+  .tile dt { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 3px; }
+  .tile dd { margin: 0; font-size: 19px; font-weight: 660; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tile dd small { font-size: 11px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; }
+  .tile dd.pos { color: var(--good); } .tile dd.neg { color: var(--bad); }
+
+  .meter { height: 6px; background: var(--grid); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .meter i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .meterlab { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 5px; }
+
+  .verdict { border-left: 3px solid var(--grid); padding: 9px 12px; border-radius: 0 7px 7px 0; background: var(--plane); margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+  .verdict.ok { border-left-color: var(--good); }
+  .verdict.no { border-left-color: var(--bad); }
+  .verdict b { color: var(--text-primary); }
+  .verdict .hd { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin-bottom: 4px; }
+  .verdict.ok .hd { color: var(--good); } .verdict.no .hd { color: var(--bad); }
+
+  /* ---------- strategy matrices ---------- */
+  .mx { display: grid; gap: 2px; margin-top: 4px; }
+  .mx .hd { font-size: 10px; color: var(--muted); display: grid; place-items: center; font-variant-numeric: tabular-nums; height: 18px; }
+  .mx .rh { font-size: 10.5px; color: var(--text-secondary); display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cell {
+    position: relative; border: 0; border-radius: 4px; padding: 0; height: 26px;
+    font: inherit; font-size: 11px; font-weight: 700; letter-spacing: -0.01em;
+    display: grid; place-items: center; cursor: pointer; overflow: hidden;
+    background: var(--act-h); color: var(--ink-on-h);
+  }
+  .cell[data-a="S"]  { background: var(--act-s); color: var(--ink-on-s); }
+  .cell[data-a="D"]  { background: var(--act-d); color: var(--ink-on-d); }
+  .cell[data-a="Ds"] { background: var(--act-d); color: var(--ink-on-d); }
+  .cell[data-a="P"]  { background: var(--act-p); color: var(--ink-on-p); }
+  .cell[data-a="Pd"] { background: var(--act-p); color: var(--ink-on-p); }
+  .cell[data-a="H"]  { background: var(--act-h); color: var(--ink-on-h); }
+  .cell .sup { position: absolute; top: 1px; right: 3px; font-size: 8px; font-weight: 700; opacity: .8; line-height: 1; }
+  /* surrender + DAS-conditional cells always carry a hatch, so they never rely on hue */
+  .cell[data-r="1"]::after, .cell[data-a="Pd"]::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 6px);
+  }
+  .cell:hover, .cell:focus-visible { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--text-primary); outline: none; z-index: 2; }
+  .cell.pinned { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent); z-index: 2; }
+  .cell.flash { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent); z-index: 3; }
+  .viz-root.texture .cell[data-a="S"]::before,
+  .viz-root.texture .cell[data-a="D"]::before,
+  .viz-root.texture .cell[data-a="Ds"]::before,
+  .viz-root.texture .cell[data-a="P"]::before,
+  .viz-root.texture .cell[data-a="Pd"]::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+  }
+  .viz-root.texture .cell[data-a="S"]::before  { background: repeating-linear-gradient(45deg, var(--hatch) 0 2px, transparent 2px 6px); }
+  .viz-root.texture .cell[data-a="D"]::before,
+  .viz-root.texture .cell[data-a="Ds"]::before { background: repeating-linear-gradient(90deg, var(--hatch) 0 2px, transparent 2px 7px); }
+  .viz-root.texture .cell[data-a="P"]::before,
+  .viz-root.texture .cell[data-a="Pd"]::before { background: repeating-linear-gradient(0deg, var(--hatch) 0 2px, transparent 2px 8px); }
+  @media (forced-colors: active) { .cell { border: 1px solid; } }
+
+  .mxgrid { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .mxgrid { grid-template-columns: 1fr; } }
+  .mxbox h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; margin: 0 0 1px; color: var(--text-primary); }
+  .mxbox p.cap { font-size: 11.5px; color: var(--muted); margin: 0 0 7px; }
+  .axlab { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 3px; }
+
+  /* ---------- legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
+  .lg { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-secondary); }
+  .sw { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; position: relative; overflow: hidden; }
+  .sw.s { background: var(--act-s); } .sw.d { background: var(--act-d); }
+  .sw.p { background: var(--act-p); } .sw.h { background: var(--act-h); }
+  .sw.r { background: var(--act-h); }
+  .sw.r::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 6px); }
+  .lg b { color: var(--text-primary); font-weight: 650; }
+
+  /* ---------- tables ---------- */
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  caption { text-align: left; font-size: 11px; color: var(--muted); padding-bottom: 7px; }
+  th, td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+  td.n, td.num { font-variant-numeric: tabular-nums; }
+  td.n { color: var(--muted); width: 26px; }
+  td.nm { font-weight: 650; white-space: nowrap; }
+  td.de { color: var(--text-secondary); }
+  td.ex { font-size: 15px; letter-spacing: 1px; white-space: nowrap; }
+  .red { color: var(--suit-red); }
+  tr.hi td { background: var(--plane); }
+
+  /* ---------- readout / hero ---------- */
+  .readout { max-width: 1180px; margin: 16px auto 0; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1040px) { .readout { grid-template-columns: 1fr; } }
+  .hero { font-size: 30px; font-weight: 680; letter-spacing: -0.02em; line-height: 1; }
+  .hero small { font-size: 13px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; margin-top: 12px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .note { font-size: 12.5px; color: var(--text-secondary); margin: 12px 0 0; line-height: 1.5; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .chip { font-size: 10.5px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--grid); color: var(--muted); }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .chip.on { color: #0b0b0b; }
+
+  /* ---------- tabs ---------- */
+  .tabs { max-width: 1180px; margin: 0 auto 16px; display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); }
+  .tab {
+    font: inherit; font-size: 12.5px; padding: 9px 13px; cursor: pointer;
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--text-secondary); border-radius: 6px 6px 0 0;
+  }
+  .tab:hover { color: var(--text-primary); background: var(--surface-1); }
+  .tab[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 650; }
+
+  /* ---------- glossary terms ---------- */
+  .term {
+    font: inherit; font-size: inherit; color: inherit; background: none; border: 0;
+    padding: 0; cursor: help; border-bottom: 1px dashed var(--muted);
+  }
+  .term:hover, .term:focus-visible { border-bottom-style: solid; border-bottom-color: var(--accent); color: var(--text-primary); outline: none; }
+  .pop {
+    position: fixed; z-index: 60; max-width: 300px; opacity: 0; pointer-events: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary);
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .pop.show { opacity: 1; }
+  .pop h4 { margin: 0 0 3px; font-size: 12.5px; color: var(--text-primary); }
+  .pop .hint { margin-top: 6px; font-size: 10.5px; color: var(--muted); }
+
+  /* ---------- prose ---------- */
+  .prose { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); max-width: 76ch; }
+  .prose h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-primary); margin: 24px 0 8px; }
+  .prose h3:first-child { margin-top: 4px; }
+  .prose p { margin: 0 0 10px; }
+  .prose strong { color: var(--text-primary); font-weight: 650; }
+  .prose ol, .prose ul { margin: 0 0 10px; padding-left: 20px; }
+  .prose li { margin-bottom: 5px; }
+  .prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--text-primary); }
+  .callout { border-left: 3px solid var(--accent); background: var(--plane); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------- calculator ---------- */
+  .calc { border: 1px solid var(--border); border-radius: 11px; padding: 16px; background: var(--plane); margin: 16px 0 4px; }
+  .calc h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-primary); margin: 0 0 3px; }
+  .calc .sub { margin-bottom: 14px; }
+  .calcrow { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .field .num {
+    font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; width: 110px;
+    padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+  }
+  .field.wide { flex: 1 1 260px; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .rangeval { font-size: 12.5px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+  /* ---------- drill ---------- */
+  .drill { display: grid; gap: 12px; }
+  .drill .q { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .drill .qside { display: flex; flex-direction: column; gap: 5px; }
+  .drill .qside span { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+  /* ---------- glossary panel ---------- */
+  .gsearch {
+    font: inherit; font-size: 13px; width: 100%; max-width: 340px;
+    padding: 8px 11px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); margin-bottom: 16px;
+  }
+  .gsec h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 20px 0 9px; }
+  .gsec:first-child h3 { margin-top: 2px; }
+  .glossgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); }
+  .gcard { border: 1px solid var(--grid); border-radius: 9px; padding: 11px 13px; background: var(--plane); }
+  .gcard h4 { margin: 0 0 4px; font-size: 12.5px; color: var(--text-primary); }
+  .gcard p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+  .gcard.hit { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+  footer.page { max-width: 1180px; margin: 22px auto 0; font-size: 11.5px; color: var(--muted); line-height: 1.55; border-top: 1px solid var(--grid); padding-top: 12px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+
+  <header class="page">
+    <div>
+      <h1>Blackjack — Play &amp; Basic Strategy</h1>
+      <p data-terms>A dealable [[shoe]] with the full rule set, and the [[basic strategy]] chart that solves it. Turn on <strong>Coach</strong> and every decision gets graded against the chart before the cards land. Every underlined term has a definition — hover it. New here? Start with <strong>How to play</strong>.</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="themeBtn" type="button">Light mode</button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" type="button" role="tab" id="tab-play" aria-controls="view-play" aria-selected="true">Play</button>
+    <button class="tab" type="button" role="tab" id="tab-chart" aria-controls="view-chart" aria-selected="false">Strategy chart</button>
+    <button class="tab" type="button" role="tab" id="tab-basics" aria-controls="view-basics" aria-selected="false">How to play</button>
+    <button class="tab" type="button" role="tab" id="tab-count" aria-controls="view-count" aria-selected="false">Counting</button>
+    <button class="tab" type="button" role="tab" id="tab-glossary" aria-controls="view-glossary" aria-selected="false">Glossary</button>
+  </nav>
+
+  <!-- ============================ PLAY ============================ -->
+  <div id="view-play" role="tabpanel" aria-labelledby="tab-play">
+
+  <div class="controls">
+    <span class="ctl-label">Coach</span>
+    <button class="btn" id="coachBtn" type="button" aria-pressed="true">Grade my play</button>
+    <button class="btn" id="hintBtn" type="button" aria-pressed="false">Show the answer</button>
+    <span class="ctl-label" style="margin-left:10px">Count</span>
+    <button class="btn" id="countBtn" type="button" aria-pressed="false">Show running count</button>
+    <span class="ctl-label" style="margin-left:10px">Table</span>
+    <button class="btn" id="rulesBtn" type="button" aria-pressed="false">Rules</button>
+    <button class="btn" id="resetBtn" type="button">Reset session</button>
+  </div>
+
+  <div class="controls" id="rulesRow" hidden>
+    <span class="ctl-label">Decks</span>
+    <select class="sel" id="rDecks">
+      <option value="1">1</option><option value="2">2</option>
+      <option value="4">4</option><option value="6" selected>6</option><option value="8">8</option>
+    </select>
+    <span class="ctl-label" style="margin-left:8px">Soft 17</span>
+    <select class="sel" id="rS17">
+      <option value="s" selected>Dealer stands (S17)</option>
+      <option value="h">Dealer hits (H17)</option>
+    </select>
+    <span class="ctl-label" style="margin-left:8px">Blackjack pays</span>
+    <select class="sel" id="rBjPay">
+      <option value="1.5" selected>3 : 2</option>
+      <option value="1.2">6 : 5</option>
+      <option value="1">1 : 1</option>
+    </select>
+    <span class="ctl-label" style="margin-left:8px">Double</span>
+    <select class="sel" id="rDouble">
+      <option value="any" selected>Any two cards</option>
+      <option value="9to11">9–11 only</option>
+      <option value="10or11">10–11 only</option>
+    </select>
+    <button class="btn" id="rDas" type="button" aria-pressed="true">Double after split</button>
+    <button class="btn" id="rSurr" type="button" aria-pressed="true">Late surrender</button>
+    <button class="btn" id="rPeek" type="button" aria-pressed="true">Dealer peeks</button>
+  </div>
+
+  <div class="layout">
+
+    <section class="panel" aria-labelledby="h-table">
+      <h2 id="h-table">The table</h2>
+      <p class="sub" id="tableSub">6 decks · dealer stands on soft 17 · blackjack pays 3:2</p>
+
+      <div class="felt">
+        <div class="side">
+          <div class="side-hd">
+            <span>Dealer</span><span class="tot" id="dealerTot">—</span>
+            <span id="dealerFlag" style="text-transform:none;font-size:11px"></span>
+          </div>
+          <div class="cardrow" id="dealerCards"></div>
+        </div>
+
+        <div></div>
+
+        <div class="side">
+          <div class="side-hd">
+            <span>You</span><span class="tot" id="playerTot">—</span>
+          </div>
+          <div class="hands" id="playerHands"></div>
+        </div>
+      </div>
+
+      <div class="actions" id="actions" style="margin-top:12px"></div>
+      <p class="msg" id="msg" aria-live="polite">Pick a bet and deal.</p>
+
+      <div class="controls" style="margin:10px 0 0;max-width:none">
+        <span class="ctl-label">Bet</span>
+        <button class="btn" data-bet="1" type="button">1</button>
+        <button class="btn" data-bet="2" type="button">2</button>
+        <button class="btn" data-bet="5" type="button">5</button>
+        <button class="btn" data-bet="10" type="button">10</button>
+        <button class="btn" data-bet="25" type="button">25</button>
+        <span class="rangeval" id="betShow" style="margin-left:6px"></span>
+      </div>
+
+      <div class="legend">
+        <span class="lg" data-terms><b>H</b> [[hit]]</span>
+        <span class="lg" data-terms><b>S</b> [[stand]]</span>
+        <span class="lg" data-terms><b>D</b> [[double]]</span>
+        <span class="lg" data-terms><b>P</b> [[split]]</span>
+        <span class="lg" data-terms><b>R</b> [[surrender]]</span>
+        <span class="lg">Keyboard: H · S · D · P · R · Enter to deal</span>
+      </div>
+    </section>
+
+    <div style="display:grid;gap:16px">
+
+      <section class="panel" aria-labelledby="h-coach">
+        <h2 id="h-coach">Coach</h2>
+        <p class="sub" id="coachSub">Graded against basic strategy for the current rules.</p>
+        <div class="verdict" id="verdict">
+          <div class="hd">Waiting</div>
+          Deal a hand. Each decision you make gets checked against the chart, and the matrix cell it came from is named so you can go look it up.
+        </div>
+        <dl class="tiles" style="margin-top:12px">
+          <div class="tile"><dt>Correct</dt><dd id="tAcc">—</dd></div>
+          <div class="tile"><dt>Decisions</dt><dd id="tDec">0</dd></div>
+          <div class="tile"><dt>Streak</dt><dd id="tStreak">0</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel" aria-labelledby="h-bank">
+        <h2 id="h-bank">Session</h2>
+        <p class="sub">Flat units. Nothing here is real money.</p>
+        <dl class="tiles">
+          <div class="tile"><dt>Bankroll</dt><dd id="tBank">0</dd></div>
+          <div class="tile"><dt>Net</dt><dd id="tNet">0</dd></div>
+          <div class="tile"><dt>Hands</dt><dd id="tHands">0</dd></div>
+        </dl>
+        <dl class="tiles" style="margin-top:2px">
+          <div class="tile"><dt>Won</dt><dd id="tWon">0</dd></div>
+          <div class="tile"><dt>Lost</dt><dd id="tLost">0</dd></div>
+          <div class="tile"><dt>Pushed</dt><dd id="tPush">0</dd></div>
+        </dl>
+        <div class="meter" aria-hidden="true"><i id="penBar" style="width:0%"></i></div>
+        <div class="meterlab"><span id="penLab">Shoe untouched</span><span id="penPct">0%</span></div>
+      </section>
+
+      <section class="panel" id="countPanel" hidden aria-labelledby="h-count">
+        <h2 id="h-count">Count</h2>
+        <p class="sub" data-terms>[[hi-lo|Hi-Lo]]. This is the information a counter has that you do not when it is switched off.</p>
+        <dl class="tiles">
+          <div class="tile"><dt data-terms>[[running count|Running]]</dt><dd id="tRC">0</dd></div>
+          <div class="tile"><dt data-terms>[[true count|True]]</dt><dd id="tTC">0.0</dd></div>
+          <div class="tile"><dt>Decks left</dt><dd id="tDL">—</dd></div>
+        </dl>
+        <p class="note" id="countNote"></p>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="readout">
+    <section class="panel" aria-labelledby="h-hist">
+      <h2 id="h-hist">Last hands</h2>
+      <p class="sub">Newest first. Mistakes are flagged.</p>
+      <div style="max-height:260px;overflow:auto">
+        <table id="histTable">
+          <thead><tr><th>#</th><th>Your hand</th><th>Up</th><th>Dealer</th><th>Result</th><th>Net</th><th>Play</th></tr></thead>
+          <tbody><tr><td colspan="7" style="color:var(--muted)">No hands yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-mist">
+      <h2 id="h-mist">Your leaks</h2>
+      <p class="sub">Every spot you have misplayed, worst first.</p>
+      <div style="max-height:260px;overflow:auto">
+        <table id="leakTable">
+          <thead><tr><th>Spot</th><th>You played</th><th>Correct</th><th class="num">Times</th></tr></thead>
+          <tbody><tr><td colspan="4" style="color:var(--muted)">Nothing yet — good.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  </div><!-- /view-play -->
+
+  <!-- ======================== STRATEGY CHART ======================== -->
+  <div id="view-chart" role="tabpanel" aria-labelledby="tab-chart" hidden>
+    <div class="controls">
+      <span class="ctl-label">Rules</span>
+      <span class="chip on" id="chartRules">—</span>
+      <span class="ctl-label" style="margin-left:10px">Accessibility</span>
+      <button class="btn" id="texBtn" type="button" aria-pressed="false">Texture</button>
+      <button class="btn" id="tvBtn" type="button" aria-pressed="false">Table view</button>
+      <span style="font-size:11.5px;color:var(--muted);margin-left:10px">Change the rules on the Play tab — these cells follow them.</span>
+    </div>
+
+    <section class="panel" style="max-width:1180px;margin:0 auto" aria-labelledby="h-mx">
+      <h2 id="h-mx">Basic strategy</h2>
+      <p class="sub" data-terms>Your hand down the side, the [[upcard|dealer's upcard]] across the top. This is the complete set of decisions — there is nothing else to learn, and no hand where a hunch beats it. Hover or click any cell for the reasoning.</p>
+
+      <div class="mxgrid">
+        <div class="mxbox">
+          <h3>Hard totals</h3>
+          <p class="cap" data-terms>No ace, or an ace already forced to count as 1. The [[hard|hard]] hands.</p>
+          <p class="axlab">Dealer upcard →</p>
+          <div class="mx" id="mxHard" role="grid" aria-label="Hard totals basic strategy"></div>
+        </div>
+        <div class="mxbox">
+          <h3>Soft totals</h3>
+          <p class="cap" data-terms>Hands holding an ace that can still count as 11 — you cannot [[bust]] by taking one card.</p>
+          <p class="axlab">Dealer upcard →</p>
+          <div class="mx" id="mxSoft" role="grid" aria-label="Soft totals basic strategy"></div>
+        </div>
+        <div class="mxbox">
+          <h3>Pairs</h3>
+          <p class="cap" data-terms>Checked first: if the pair row says [[split]], split. Otherwise fall through to hard or soft.</p>
+          <p class="axlab">Dealer upcard →</p>
+          <div class="mx" id="mxPair" role="grid" aria-label="Pair splitting basic strategy"></div>
+        </div>
+        <div class="mxbox">
+          <h3 id="h-cellrd">Cell detail</h3>
+          <p class="cap">Hover a cell. Click to pin it.</p>
+          <div class="hero" id="cellHero">—</div>
+          <dl class="kv" id="cellKv"></dl>
+          <p class="note" id="cellNote">The chart is not a set of tendencies. Each cell is the single action with the highest expected value for that exact matchup, computed over every way the hand can finish.</p>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="lg"><span class="sw h"></span><b>H</b> Hit</span>
+        <span class="lg"><span class="sw s"></span><b>S</b> Stand</span>
+        <span class="lg"><span class="sw d"></span><b>D</b> Double — <span id="lgD">else hit</span></span>
+        <span class="lg"><span class="sw d"></span><b>D<sup>s</sup></b> Double — else stand</span>
+        <span class="lg"><span class="sw p"></span><b>P</b> Split</span>
+        <span class="lg"><span class="sw r"></span><b>R</b> Surrender — else hit</span>
+        <span class="lg" data-terms>Hatched = conditional on a rule ([[das|DAS]] or [[surrender]])</span>
+      </div>
+    </section>
+
+    <section class="panel" id="tableview" hidden style="max-width:1180px;margin:16px auto 0" aria-labelledby="h-tv">
+      <h2 id="h-tv">Table view</h2>
+      <p class="sub">Every cell of all three matrices as text, for screen readers, print and search.</p>
+      <div style="max-height:420px;overflow:auto">
+        <table id="tvTable">
+          <thead><tr><th>Chart</th><th>Your hand</th><th>Dealer</th><th>Action</th><th>Meaning</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" style="max-width:1180px;margin:16px auto 0" aria-labelledby="h-drill">
+      <h2 id="h-drill">Drill</h2>
+      <p class="sub">Random spots, no cards, no money. The fastest way to get the chart into your hands.</p>
+      <div class="drill">
+        <div class="q">
+          <div class="qside">
+            <span>Dealer shows</span>
+            <div class="cardrow" id="dqDealer"></div>
+          </div>
+          <div class="qside">
+            <span>You have</span>
+            <div class="cardrow" id="dqPlayer"></div>
+          </div>
+          <div class="qside">
+            <span>Your total</span>
+            <div class="hero" id="dqTot" style="font-size:24px">—</div>
+          </div>
+        </div>
+        <div class="actions" id="dqActions"></div>
+        <div class="verdict" id="dqVerdict">
+          <div class="hd">Ready</div>
+          Press <b>Start drill</b>, then answer with the buttons or the H / S / D / P / R keys.
+        </div>
+        <dl class="tiles" style="max-width:420px">
+          <div class="tile"><dt>Correct</dt><dd id="dqAcc">—</dd></div>
+          <div class="tile"><dt>Answered</dt><dd id="dqN">0</dd></div>
+          <div class="tile"><dt>Streak</dt><dd id="dqStreak">0</dd></div>
+        </dl>
+      </div>
+    </section>
+  </div><!-- /view-chart -->
+
+  <!-- ========================== HOW TO PLAY ========================== -->
+  <div id="view-basics" role="tabpanel" aria-labelledby="tab-basics" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>How blackjack works</h2>
+      <p class="sub">Everything the chart assumes you already know, in order.</p>
+      <div class="prose" data-terms>
+
+        <h3>The goal</h3>
+        <p>Get closer to 21 than the dealer without going over. That is the whole game, and the order of those two clauses matters: going over — [[bust|busting]] — loses immediately, before the dealer plays at all. Roughly 8% of every bet the house wins comes from players busting hands the dealer would have busted too.</p>
+        <p>You are not trying to make 21. You are trying to beat one specific opponent who has no choices to make.</p>
+
+        <h3>Card values</h3>
+        <p>Number cards are worth their number. Jack, queen and king are worth 10. An ace is worth 11 <em>or</em> 1, whichever helps — and it switches automatically as the hand develops. A hand with an ace still counting 11 is [[soft|soft]]; once the ace has to drop to 1, the hand is [[hard|hard]]. <code>A-6</code> is a soft 17; <code>A-6-9</code> is a hard 16.</p>
+
+        <h3>One hand, start to finish</h3>
+        <ol>
+          <li><strong>You bet.</strong> Before any cards. Unlike poker, this is the last time you commit money without information — everything after is a response to what you see.</li>
+          <li><strong>Cards dealt.</strong> Two to you, face up. Two to the dealer: one face up — the [[upcard]] — and one face down, the [[hole card]]. That single visible card is the entire basis of every decision you will make.</li>
+          <li><strong>[[blackjack|Blackjack]] check.</strong> If you were dealt an ace plus a ten-value card, that is blackjack and it pays [[3:2]] immediately. If the dealer's upcard is an ace or a ten, they [[peek|peek]] at the hole card; if they have blackjack, the hand ends there.</li>
+          <li><strong>Your turn.</strong> [[hit|Hit]], [[stand]], [[double]], [[split]] or [[surrender]] — in that order of how often they come up. You can keep hitting as long as you like; bust and you are done.</li>
+          <li><strong>The dealer plays.</strong> They turn over the hole card and follow a fixed rule with no judgement in it: hit until 17 or more, then stop. That is all. The dealer cannot double, cannot split, and cannot decide to play differently because of what you have.</li>
+          <li><strong>Settle.</strong> Higher total wins. Equal totals [[push]] and you get your bet back. If the dealer busts, every hand still standing wins.</li>
+        </ol>
+
+        <h3>Your five options</h3>
+        <ul>
+          <li><strong>[[hit|Hit]]</strong> — take another card. Repeatable.</li>
+          <li><strong>[[stand|Stand]]</strong> — take nothing and pass to the dealer.</li>
+          <li><strong>[[double|Double down]]</strong> — double your bet and take <em>exactly one</em> more card, then you are done. The most under-used winning play in the game: most players double on 11 and nothing else, and leave money on the table on 9, 10 and soft hands.</li>
+          <li><strong>[[split|Split]]</strong> — with two cards of the same rank, separate them into two hands and match your original bet on the second. Each then plays independently.</li>
+          <li><strong>[[surrender|Surrender]]</strong> — give up the hand and lose half your bet, available only as your first decision. Looks cowardly, is correct in exactly three or four spots, and is worth about 0.07% when used in only those spots.</li>
+        </ul>
+
+        <div class="callout">
+          <p><strong>Insurance is not a decision — it is a no.</strong> When the dealer shows an ace you will be offered [[insurance]], a side bet of half your stake that pays 2:1 if the dealer has blackjack. It wins about 30.9% of the time in a six-deck shoe and needs 33.3% to break even, so it loses money on every hand. "Even money" on your own blackjack is the same bet in a costume. The only exception is if you are [[counting|counting cards]] and the [[true count]] is +3 or higher, because then the deck is ten-rich enough to flip it.</p>
+        </div>
+
+        <h3>Why the dealer's fixed rule is the whole game</h3>
+        <p>The dealer must hit 16 and must stand on 17. That means their upcard tells you a lot about how often they will bust: a 5 or 6 showing busts about 42% of the time, while a 10 or an ace busts only about 21%. The chart's shape falls straight out of this. Against 4, 5 and 6 you stand on weak totals and let them break; against 9, 10 and ace you are forced to improve a hand that is probably losing.</p>
+        <p>This is also why the house wins at all. The dealer acts last, so when you both bust, you have already lost. Play perfect basic strategy at a decent six-deck game and the edge against you is around <strong>0.5%</strong>. Play by instinct and it is <strong>2–3%</strong>. That gap — four to six times your losses — is the only thing on this page that matters.</p>
+
+        <h3>Three habits that cost real money</h3>
+        <ul>
+          <li><strong>Standing on 16 against a 7.</strong> It feels safe. You win 16 vs 7 by standing about 30% of the time and by hitting about 41%. Hit it.</li>
+          <li><strong>Not splitting 8s against a 9, 10 or ace.</strong> Hard 16 is the worst hand in blackjack. Splitting it turns one terrible hand into two mediocre ones, which loses less. Losing less <em>is</em> the play.</li>
+          <li><strong>Taking insurance with a good hand.</strong> Your cards have nothing to do with it. It is a separate bet on the dealer's hole card, and it is a bad one.</li>
+        </ul>
+
+        <div class="callout">
+          <p><strong>What is not on this page.</strong> Progressive betting systems, "due" cards, mimicking the dealer, and never busting are all losing strategies with confident-sounding names. No betting pattern changes the odds of the next hand, because the cards do not know what you bet. The only two things that measurably move the house edge are playing the chart correctly and choosing a table with better rules.</p>
+        </div>
+
+        <h3>Rules worth walking away from</h3>
+        <ul>
+          <li><strong>Blackjack pays 6:5</strong> instead of 3:2 — costs about 1.4%. This single rule can more than triple the house edge. Switch it on in the rules row and watch the session numbers.</li>
+          <li><strong>Dealer hits soft 17</strong> ([[h17|H17]]) — costs about 0.22%, and changes a handful of chart cells.</li>
+          <li><strong>No double after split</strong> — about 0.14%.</li>
+          <li><strong>Double restricted to 10–11</strong> — about 0.2%.</li>
+        </ul>
+        <p>Everything in that list is set on the <strong>Play</strong> tab under <strong>Rules</strong>, and the chart re-derives itself when you change it.</p>
+      </div>
+    </section>
+  </div><!-- /view-basics -->
+
+  <!-- =========================== COUNTING =========================== -->
+  <div id="view-count" role="tabpanel" aria-labelledby="tab-count" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>Card counting</h2>
+      <p class="sub">What it actually is, what it is worth, and why basic strategy comes first.</p>
+      <div class="prose" data-terms>
+        <h3>The one idea</h3>
+        <p>Counting does not predict the next card. It tracks whether the cards <em>left</em> in the [[shoe]] are richer in tens and aces than normal. Ten-rich shoes favour you, for three reasons that all point the same way: you get more blackjacks and they pay 3:2 while the dealer's pay 1:1; the dealer busts more often when forced to hit a stiff total; and your [[double|doubles]] land better.</p>
+        <p>Low cards favour the dealer. So you count them against each other.</p>
+
+        <h3>Hi-Lo</h3>
+        <p>Every card you see adjusts one number, the [[running count]]:</p>
+        <div style="max-width:560px"><table id="hiloTable"><caption>Hi-Lo tags. The whole deck sums to zero — that is what makes it a balanced count.</caption>
+          <thead><tr><th>Cards</th><th>Tag</th><th>Why</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+
+        <h3>Running count to true count</h3>
+        <p>A running count of +6 means something very different with six decks left than with one. Divide to normalise — that gives the [[true count]]:</p>
+        <p><code>true count = running count ÷ decks remaining</code></p>
+        <p>True count is the number every decision below is keyed to. One rough conversion: each +1 of true count is worth about <strong>0.5%</strong> back to you, so a basic-strategy game at −0.5% breaks even around true +1 and is genuinely in your favour from about +2 up.</p>
+
+        <div class="calc">
+          <h3>Bet sizing from the count</h3>
+          <p class="sub">Kelly-style sizing: bet your edge, scaled to your bankroll. Switch the count display on while you play to see these numbers move.</p>
+          <div class="calcrow">
+            <div class="field">
+              <label for="cBank">Bankroll (units)</label>
+              <input class="num" id="cBank" type="number" min="1" step="10" value="1000">
+            </div>
+            <div class="field">
+              <label for="cBase">House edge off the top (%)</label>
+              <input class="num" id="cBase" type="number" min="0" max="2" step="0.05" value="0.5">
+            </div>
+            <div class="field wide">
+              <label for="cTC">True count <span class="rangeval" id="cTCval">+2.0</span></label>
+              <input id="cTC" type="range" min="-4" max="8" step="0.5" value="2">
+            </div>
+          </div>
+          <dl class="tiles" style="margin-top:16px">
+            <div class="tile"><dt>Your edge</dt><dd id="cEdge">—</dd></div>
+            <div class="tile"><dt>Kelly bet</dt><dd id="cKelly">—</dd></div>
+            <div class="tile"><dt>Half-Kelly</dt><dd id="cHalf">—</dd></div>
+            <div class="tile"><dt>Spread vs min</dt><dd id="cSpread">—</dd></div>
+          </dl>
+          <p class="note" id="cNote"></p>
+        </div>
+
+        <h3>Playing deviations</h3>
+        <p>At high counts a few chart cells flip, because the composition of the shoe has moved enough to change which action wins. These are the ones worth knowing — the first is worth more than all the others combined.</p>
+        <div style="max-width:720px"><table id="devTable"><caption>Six-deck Hi-Lo deviations, in rough order of value. "Stand at +0" means stand when the true count is 0 or higher.</caption>
+          <thead><tr><th>Spot</th><th>Basic</th><th>Deviation</th><th>At true count</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+
+        <div class="callout">
+          <p><strong>The order of operations is not negotiable.</strong> Counting with sloppy basic strategy loses money faster than flat-betting with perfect basic strategy. The count is worth roughly 0.5–1.5% when executed well; a handful of chart errors per shoe costs more than that. Get the <strong>Drill</strong> score to 100% and keep it there before any of this is worth your attention.</p>
+        </div>
+
+        <h3>Why it is hard in practice</h3>
+        <ul>
+          <li><strong>Penetration.</strong> If the dealer shuffles with two decks left in a six-deck shoe, the true count rarely gets high enough to matter. Deep penetration is the single biggest factor in whether a game is beatable at all — the shoe meter on the Play tab shows how far in you are.</li>
+          <li><strong>Bet spread.</strong> The edge only pays if you bet much more at high counts than low ones, and a large spread is exactly what gets noticed.</li>
+          <li><strong>Variance.</strong> A 1% edge with blackjack's swings means losing sessions are routine over any number of hands a human actually plays. The arithmetic is sound and the short run says nothing about it.</li>
+          <li><strong>Countermeasures.</strong> Continuous shuffling machines reduce the count's value to nothing. Casinos are private property and may ask anyone to leave.</li>
+        </ul>
+      </div>
+    </section>
+  </div><!-- /view-count -->
+
+  <!-- =========================== GLOSSARY =========================== -->
+  <div id="view-glossary" role="tabpanel" aria-labelledby="tab-glossary" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>Glossary</h2>
+      <p class="sub">Every term used anywhere in this tool. Search it, or click any underlined word elsewhere to land here.</p>
+      <input class="gsearch" id="gSearch" type="search" placeholder="Search terms and definitions…" aria-label="Search glossary">
+      <div id="glossList"></div>
+      <p id="gEmpty" hidden style="color:var(--muted);font-size:13px">No term matches that.</p>
+    </section>
+  </div><!-- /view-glossary -->
+
+  <footer class="page" data-terms>
+    Six-deck [[basic strategy]], dealer [[peek|peeks]], [[das|double after split]], re-split to four hands, no re-splitting aces, one card to split aces, [[late surrender]] where enabled. Chart cells re-derive when you change the rules. Totals quoted for the house edge are the standard published figures for these rule sets; this is a teaching tool, not a simulator, and no part of it is a reason to gamble.
+  </footer>
+
+  <div class="pop" id="pop" role="tooltip"></div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  // ============================ glossary ============================
+  const GLOSSARY = [
+    { g: "The deal", items: [
+      ["upcard", "Upcard", "The dealer's one face-up card. Every decision in basic strategy is a function of your hand and this single card — there is no other information at the table, which is exactly why the chart can be complete."],
+      ["hole card", "Hole card", "The dealer's face-down card. Unknown to you unless the dealer <em>peeks</em> and turns up blackjack, and the reason the upcard carries so much weight: it is the only half of the dealer's hand you get to react to."],
+      ["shoe", "Shoe", "The box holding several shuffled decks, dealt until a plastic cut card appears. More decks slightly favour the house, mainly because splitting and doubling pay off less often."],
+      ["peek", "Peek", "The dealer checking the hole card for blackjack when showing an ace or a ten. Under peek rules you never lose a doubled or split bet to a dealer blackjack. Under no-peek (\"European\") rules you can, which is worth about 0.11% to the house."],
+      ["penetration", "Penetration", "How deep into the shoe the dealer goes before shuffling. 75% penetration in a six-deck shoe means about a deck and a half is never dealt. Irrelevant to basic strategy, decisive for counting."],
+      ["cut card", "Cut card", "The plastic marker placed near the back of the shoe. When it comes out, the current round finishes and the shoe is shuffled."],
+      ["burn card", "Burn card", "A card discarded unseen after a shuffle. Costs a counter a little information and nothing else."]
+    ]},
+    { g: "Your options", items: [
+      ["hit", "Hit", "Take another card. You may keep hitting until you stand or bust. Written <strong>H</strong> on the chart."],
+      ["stand", "Stand", "Take no more cards and pass the action to the dealer. Written <strong>S</strong>."],
+      ["double", "Double down", "Double your bet and take exactly one more card, then your hand is finished. Written <strong>D</strong> — or <strong>D<sup>s</sup></strong> where the fallback is to stand rather than hit if doubling is not allowed. The play most beginners under-use: it is correct on hard 9, 10 and 11 and on a range of soft hands, not just on 11."],
+      ["split", "Split", "With two cards of the same rank, separate them into two hands and match your bet on the new one. Each hand then plays on its own. Written <strong>P</strong>."],
+      ["surrender", "Surrender", "Forfeit the hand and lose half your bet instead of all of it. Written <strong>R</strong>. Only legal as your first decision, and only correct in three or four spots — but in those spots it saves real money, because losing half of a hand you win 25% of the time beats losing all of it."],
+      ["late surrender", "Late surrender", "Surrender offered <em>after</em> the dealer peeks for blackjack, which is the normal form. Early surrender — before the peek — is far more valuable and essentially extinct."],
+      ["insurance", "Insurance", "A side bet of half your stake, offered when the dealer shows an ace, that pays 2:1 if the dealer has blackjack. It needs to win one time in three and wins about 30.9% of the time in a six-deck shoe, so it loses money on every hand regardless of what you hold. Correct only at a true count of about +3 or higher."],
+      ["even money", "Even money", "Being offered a flat 1:1 payout on your own blackjack when the dealer shows an ace, instead of taking 3:2 and risking a push. It is arithmetically identical to taking insurance on a blackjack, and it is identically bad."],
+      ["das", "DAS — double after split", "A rule allowing you to double a hand you created by splitting. Worth about 0.14% to you, and it widens several splitting cells: with DAS you split 2-2 against a 2, without it you hit."],
+      ["resplit", "Re-split", "Splitting again when a split hand pairs up. Usually allowed to a total of four hands. Aces are almost never re-splittable, and split aces get one card each."]
+    ]},
+    { g: "Hands & totals", items: [
+      ["blackjack", "Blackjack · natural", "An ace plus a ten-value card as your first two cards. Pays 3:2 and cannot be beaten, only pushed by a dealer blackjack. A 21 made in three cards is not a blackjack and pays 1:1."],
+      ["3:2", "3 : 2", "The standard blackjack payout — a 10-unit bet returns 15 in winnings. Tables paying 6:5 instead add about 1.4% to the house edge, which is the worst single rule you will encounter and is now common on low-limit tables."],
+      ["soft", "Soft hand", "A hand containing an ace still counting 11, so one more card cannot bust it. <code>A-6</code> is a soft 17. Soft hands are played far more aggressively than their total suggests, because the downside is capped."],
+      ["hard", "Hard hand", "A hand with no ace, or one where the ace has been forced down to 1. <code>10-6</code> and <code>A-6-9</code> are both hard 16. Hard totals of 12 through 16 are the hands the chart exists to rescue."],
+      ["stiff", "Stiff", "A hard total of 12 to 16 — too high to hit safely, too low to win by standing. The dealer is stiff with an upcard of 2 through 6, which is the entire basis of the chart's left half."],
+      ["bust", "Bust", "Going over 21, which loses at once — before the dealer plays. The asymmetry is the house edge: when you both would have busted, you already lost."],
+      ["push", "Push", "A tie. Your bet comes back and nothing changes hands."],
+      ["pat", "Pat hand", "A total of 17 to 21 — good enough to stand on without improving."],
+      ["pair", "Pair", "Two cards of equal rank, the only hands you may split. Most casinos let you split any two ten-value cards, like a king and a ten; basic strategy says never to, because 20 is already the second-best hand in the game."]
+    ]},
+    { g: "Strategy & math", items: [
+      ["basic strategy", "Basic strategy", "The complete set of mathematically optimal decisions given only your hand and the dealer's upcard. Not a style, a tendency, or a starting point — it is the solved answer, computed over every way each hand can finish, and it is what the three matrices on the chart tab are. Playing it perfectly at a good six-deck game leaves the house about 0.5%."],
+      ["house edge", "House edge", "The casino's expected profit as a percentage of each bet. About 0.5% under perfect basic strategy at a standard six-deck game, and 2–3% for a typical player going on instinct. That gap is self-inflicted and free to fix."],
+      ["ev", "Expected value (EV)", "The average result of a decision if you made it a very large number of times. Every chart cell is just the action with the highest EV — which often means the action that loses the <em>least</em>, as with splitting 8s against a 10."],
+      ["variance", "Variance", "How widely results scatter around their average. Blackjack's variance is high enough that a few hundred hands tell you nothing about whether you played well; only the decisions can be judged in the short run, which is what the coach does."],
+      ["composition", "Composition-dependent", "A refinement where the exact cards matter, not just the total: 16 as <code>10-6</code> plays differently from 16 as <code>8-4-4</code> against a 10. Worth a hundredth of a percent or so. Ignore it until the rest is automatic."],
+      ["total dependent", "Total-dependent", "The ordinary form of basic strategy, keyed only to your total and whether it is soft — which is what this chart uses, and what you should learn."]
+    ]},
+    { g: "Counting", items: [
+      ["counting", "Card counting", "Tracking the ratio of high to low cards left in the shoe so you can bet more when it favours you. Legal, since you are only using your memory, and much harder to profit from than it sounds — it needs deep penetration, a wide bet spread, perfect basic strategy underneath, and a large bankroll to survive the swings."],
+      ["hi-lo", "Hi-Lo", "The standard counting system. 2 through 6 count +1, 7 through 9 count 0, tens and aces count −1. Balanced, which means a full deck sums to zero, so the count is directly meaningful."],
+      ["running count", "Running count", "The sum of the Hi-Lo tags of every card you have seen since the shuffle. Raw, un-normalised, and not directly actionable."],
+      ["true count", "True count", "The running count divided by the decks still unseen. This is the number that matters, because +6 with six decks left is nothing and +6 with one deck left is a lot. Each +1 of true count is worth roughly 0.5% back to the player."],
+      ["deviation", "Deviation · index play", "A chart cell that flips at a given true count, like standing on 16 against a 10 at a count of 0 or higher. A small set of them captures most of the available value; the insurance one alone captures more than the rest together."],
+      ["bet spread", "Bet spread", "The ratio between your largest and smallest bet. Counting's entire profit comes from betting big when you have the edge, so a narrow spread earns nothing — and a wide one is conspicuous."],
+      ["kelly", "Kelly criterion", "Betting a fraction of bankroll equal to your edge divided by the variance, which maximises long-run growth. Most practitioners bet half of it, trading some growth for far smaller swings."],
+      ["csm", "Continuous shuffling machine", "A device that returns played cards to the shuffler immediately, so there is never a depleted shoe. It makes counting worthless and slightly reduces the house edge, since the shoe is permanently fresh."]
+    ]}
+  ];
+
+  const TERMS = {};
+  GLOSSARY.forEach(sec => sec.items.forEach(it => TERMS[it[0]] = { title: it[1], def: it[2], group: sec.g }));
+
+  const HILO = [
+    ["2 · 3 · 4 · 5 · 6", "+1", "Low cards. Removing them from the shoe helps you — they are the cards that let the dealer safely improve a stiff hand."],
+    ["7 · 8 · 9", "0", "Neutral. They neither rescue the dealer nor make blackjacks."],
+    ["10 · J · Q · K · A", "−1", "High cards. You want these still in the shoe: they make blackjacks, which pay you 3:2 and the dealer 1:1, and they bust the dealer's stiff totals."]
+  ];
+
+  const DEVIATIONS = [
+    ["Insurance, any hand", "Never", "Take insurance", "+3 or higher"],
+    ["Hard 16 vs 10", "Hit", "Stand", "0 or higher"],
+    ["Hard 15 vs 10", "Hit", "Stand", "+4 or higher"],
+    ["Hard 12 vs 3", "Hit", "Stand", "+2 or higher"],
+    ["Hard 12 vs 2", "Hit", "Stand", "+3 or higher"],
+    ["Hard 11 vs A", "Hit (S17)", "Double", "+1 or higher"],
+    ["Hard 9 vs 2", "Hit", "Double", "+1 or higher"],
+    ["Hard 10 vs 10", "Hit", "Double", "+4 or higher"],
+    ["Hard 9 vs 7", "Hit", "Double", "+3 or higher"],
+    ["Hard 16 vs 9", "Hit", "Stand", "+5 or higher"],
+    ["Hard 13 vs 2", "Stand", "Hit", "−1 or lower"],
+    ["Hard 12 vs 4", "Stand", "Hit", "0 or lower"],
+    ["Hard 12 vs 5", "Hit", "Stand", "+4 or higher"],
+    ["Hard 12 vs 6", "Hit", "Stand", "+2 or higher"],
+    ["Pair of 10s vs 5", "Stand", "Split", "+5 or higher"],
+    ["Pair of 10s vs 6", "Stand", "Split", "+4 or higher"]
+  ];
+
+  // ======================== cards & hand math ========================
+  const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  const SUITS = [["♠", 0], ["♥", 1], ["♦", 1], ["♣", 0]];
+  const UPS = ["2","3","4","5","6","7","8","9","10","A"];   // chart columns
+
+  function cardValue(r) { return r === "A" ? 11 : (r === "J" || r === "Q" || r === "K" ? 10 : +r); }
+  function hiloTag(r) {
+    const v = cardValue(r);
+    if (v >= 10) return -1;          // tens and aces
+    if (v >= 7) return 0;
+    return 1;
+  }
+  // chart column key for a rank: all ten-value cards share the "10" column
+  function upKey(r) { const v = cardValue(r); return v === 11 ? "A" : (v === 10 ? "10" : String(v)); }
+
+  // total of a card list, with soft/hard flag
+  function handValue(cards) {
+    let t = 0, aces = 0;
+    cards.forEach(c => { const v = cardValue(c.r); t += v; if (v === 11) aces++; });
+    while (t > 21 && aces > 0) { t -= 10; aces--; }
+    return { total: t, soft: aces > 0, bust: t > 21 };
+  }
+  function isBlackjack(hand) {
+    return hand.cards.length === 2 && !hand.fromSplit && handValue(hand.cards).total === 21;
+  }
+  function isPair(cards) {
+    return cards.length === 2 && cardValue(cards[0].r) === cardValue(cards[1].r);
+  }
+
+  // ====================== basic strategy tables ======================
+  // Codes: H hit · S stand · D double else hit · Ds double else stand
+  //        P split · Pd split if DAS else hit · R surrender else hit · Rs surrender else stand
+  // Columns are UPS order: 2 3 4 5 6 7 8 9 10 A
+  const X = s => s.trim().split(/\s+/);
+
+  const HARD = {
+    4:  X("H  H  H  H  H  H  H  H  H  H"),
+    5:  X("H  H  H  H  H  H  H  H  H  H"),
+    6:  X("H  H  H  H  H  H  H  H  H  H"),
+    7:  X("H  H  H  H  H  H  H  H  H  H"),
+    8:  X("H  H  H  H  H  H  H  H  H  H"),
+    9:  X("H  D  D  D  D  H  H  H  H  H"),
+    10: X("D  D  D  D  D  D  D  D  H  H"),
+    11: X("D  D  D  D  D  D  D  D  D  H"),
+    12: X("H  H  S  S  S  H  H  H  H  H"),
+    13: X("S  S  S  S  S  H  H  H  H  H"),
+    14: X("S  S  S  S  S  H  H  H  H  H"),
+    15: X("S  S  S  S  S  H  H  H  R  H"),
+    16: X("S  S  S  S  S  H  H  R  R  R"),
+    17: X("S  S  S  S  S  S  S  S  S  S"),
+    18: X("S  S  S  S  S  S  S  S  S  S"),
+    19: X("S  S  S  S  S  S  S  S  S  S"),
+    20: X("S  S  S  S  S  S  S  S  S  S"),
+    21: X("S  S  S  S  S  S  S  S  S  S")
+  };
+
+  // keyed by total of the soft hand (A,A = 12, A,2 = 13 ... A,9 = 20)
+  const SOFT = {
+    12: X("H  H  H  H  H  H  H  H  H  H"),   // A,A that cannot be split — never stand, cannot bust
+    13: X("H  H  H  D  D  H  H  H  H  H"),
+    14: X("H  H  H  D  D  H  H  H  H  H"),
+    15: X("H  H  D  D  D  H  H  H  H  H"),
+    16: X("H  H  D  D  D  H  H  H  H  H"),
+    17: X("H  D  D  D  D  H  H  H  H  H"),
+    18: X("S  Ds Ds Ds Ds S  S  H  H  H"),
+    19: X("S  S  S  S  S  S  S  S  S  S"),
+    20: X("S  S  S  S  S  S  S  S  S  S"),
+    21: X("S  S  S  S  S  S  S  S  S  S")
+  };
+
+  // keyed by the value of one card of the pair (11 = aces, 10 = ten-value)
+  const PAIR = {
+    11: X("P  P  P  P  P  P  P  P  P  P"),
+    10: X("S  S  S  S  S  S  S  S  S  S"),
+    9:  X("P  P  P  P  P  S  P  P  S  S"),
+    8:  X("P  P  P  P  P  P  P  P  P  P"),
+    7:  X("P  P  P  P  P  P  H  H  H  H"),
+    6:  X("Pd P  P  P  P  H  H  H  H  H"),
+    5:  X("D  D  D  D  D  D  D  D  H  H"),
+    4:  X("H  H  H  Pd Pd H  H  H  H  H"),
+    3:  X("Pd Pd P  P  P  P  H  H  H  H"),
+    2:  X("Pd Pd P  P  P  P  H  H  H  H")
+  };
+
+  // dealer-hits-soft-17 overrides, applied on top of the S17 tables
+  const H17_HARD = { 11: { A: "D" }, 15: { A: "R" }, 17: { A: "Rs" } };
+  const H17_SOFT = { 18: { "2": "Ds" }, 19: { "6": "Ds" } };
+  const H17_PAIR = { 8: { A: "Rp" } };   // Rp = surrender if allowed, else split
+
+  function upIdx(k) { return UPS.indexOf(k); }
+
+  // raw chart code for a spot, before rule fallbacks are resolved
+  function chartCode(chart, row, upk, h17) {
+    const i = upIdx(upk);
+    if (chart === "hard") {
+      if (h17 && H17_HARD[row] && H17_HARD[row][upk]) return H17_HARD[row][upk];
+      return (HARD[row] || HARD[21])[i];
+    }
+    if (chart === "soft") {
+      if (h17 && H17_SOFT[row] && H17_SOFT[row][upk]) return H17_SOFT[row][upk];
+      return (SOFT[row] || SOFT[21])[i];
+    }
+    if (h17 && H17_PAIR[row] && H17_PAIR[row][upk]) return H17_PAIR[row][upk];
+    return PAIR[row][i];
+  }
+
+  // resolve a code to an action given what is legal right now
+  function resolve(code, can) {
+    switch (code) {
+      case "D":  return can.double ? "double" : "hit";
+      case "Ds": return can.double ? "double" : "stand";
+      case "P":  return can.split ? "split" : null;
+      case "Pd": return (can.split && can.das) ? "split" : null;
+      case "R":  return can.surrender ? "surrender" : "hit";
+      case "Rs": return can.surrender ? "surrender" : "stand";
+      case "Rp": return can.surrender ? "surrender" : (can.split ? "split" : null);
+      case "H":  return "hit";
+      case "S":  return "stand";
+    }
+    return "hit";
+  }
+
+  // The full decision. `can` describes legality; returns { action, code, chart, row, upk }
+  function advise(cards, upRank, can) {
+    const upk = upKey(upRank), v = handValue(cards);
+    if (isPair(cards)) {
+      const pv = cardValue(cards[0].r);
+      const code = chartCode("pair", pv, upk, can.h17);
+      const act = resolve(code, can);
+      if (act) return { action: act, code: code, chart: "pair", row: pv, upk: upk };
+      // pair row did not split — fall through to the total
+    }
+    if (v.soft && v.total >= 12) {
+      const code = chartCode("soft", v.total, upk, can.h17);
+      return { action: resolve(code, can), code: code, chart: "soft", row: v.total, upk: upk };
+    }
+    const row = Math.max(4, Math.min(21, v.total));
+    const code = chartCode("hard", row, upk, can.h17);
+    return { action: resolve(code, can), code: code, chart: "hard", row: row, upk: upk };
+  }
+
+  const ACTION_NAME = { hit: "Hit", stand: "Stand", double: "Double", split: "Split", surrender: "Surrender" };
+  const CODE_MEANING = {
+    H:  "Hit",
+    S:  "Stand",
+    D:  "Double if allowed, otherwise hit",
+    Ds: "Double if allowed, otherwise stand",
+    P:  "Split",
+    Pd: "Split if double-after-split is allowed, otherwise hit",
+    R:  "Surrender if allowed, otherwise hit",
+    Rs: "Surrender if allowed, otherwise stand",
+    Rp: "Surrender if allowed, otherwise split"
+  };
+
+  // dealer bust probability by upcard — six decks, S17 (published figures)
+  const BUST_PCT = { "2": 35.3, "3": 37.6, "4": 40.3, "5": 42.9, "6": 42.1, "7": 26.0, "8": 23.9, "9": 23.3, "10": 21.4, "A": 11.7 };
+
+  // why each chart region looks the way it does
+  function reasoning(d, can) {
+    const u = d.upk, weak = ["2","3","4","5","6"].indexOf(u) >= 0;
+    const bust = BUST_PCT[u];
+    const lead = "A " + (u === "A" ? "dealer ace" : u + " showing") + " busts about " + bust + "% of the time. ";
+    if (d.chart === "pair") {
+      const pv = d.row;
+      if (pv === 11) return lead + "Always split aces. Two hands each starting from 11 is worth far more than one hand totalling a soft 12, even though you only get one card to each.";
+      if (pv === 10) return lead + "Never split 20. It already wins about 70% of hands outright — breaking it up to chase two hands of 10 trades a near-certain winner for two coin flips.";
+      if (pv === 8) return lead + "Always split 8s. Hard 16 is the worst total in blackjack; two hands starting from 8 lose less, and against a 2 through 7 they are genuinely profitable. This is the clearest case of the chart choosing the smaller loss.";
+      if (d.code === "Pd") return lead + "This split only pays once you are allowed to double the resulting hands — the extra value comes from the doubles, not the split. Without DAS, hit instead.";
+      if (d.code === "P") return lead + "Splitting here attacks a dealer who is likely to break, turning one mediocre total into two live hands.";
+      if (pv === 5) return lead + "Treat 5-5 as a hard 10 and double where a 10 would. Splitting it would turn one strong starting hand into two weak ones.";
+      if (pv === 9) return "Against " + u + ", 18 is already ahead — standing banks it. Splitting 9s is for the upcards where 18 is not good enough or the dealer is likely to break.";
+      return lead + "The pair is not worth splitting against this upcard; play the total instead.";
+    }
+    if (d.chart === "soft") {
+      if (d.code === "D" || d.code === "Ds") return lead + "A soft total cannot bust on one card, so doubling against a weak upcard is free upside — you get paid double on a hand that has no downside to taking the card.";
+      if (d.code === "S") return "Against " + u + ", this soft total is already good enough to win more often than another card would improve it.";
+      return lead + "Hitting a soft total risks nothing: the ace drops to 1 and you keep playing. Standing on a soft 17 or less simply throws away the free card.";
+    }
+    const t = d.row;
+    if (d.code === "R" || d.code === "Rs") return "The dealer breaks only " + bust + "% of the time here and you win this spot less than a quarter of the hands. Giving up half the bet costs less than playing it out — the rare case where the best available action still loses money.";
+    if (d.code === "D") return lead + "Doubling " + t + " against a " + u + " is one of the plays that pays for learning the chart. You are a favourite on the hand, so you want more money on it.";
+    if (t >= 17) return "17 or better stands against everything. Hitting it busts far more often than it improves.";
+    if (d.code === "S") return lead + "You are stiff, but so is the dealer. Standing makes them draw to a bust instead of you — the single biggest source of the chart's value.";
+    if (t === 12 && weak) return lead + "The closest call on the chart. 12 against a 2 or 3 is nearly a coin flip, and hitting wins by a hair — the dealer is not weak enough yet to stand and wait.";
+    if (t >= 12) return lead + "A " + u + " is strong, so standing on " + t + " only loses slowly. Take the card: busting is likely, but standing is worse.";
+    return lead + "At " + t + " there is no card that can bust you, and you have to improve to win.";
+  }
+
+  // ============================== shoe ==============================
+  const RULES = {
+    decks: 6, h17: false, das: true, surrender: true, peek: true,
+    bjPay: 1.5, doubleOn: "any", maxHands: 4, penetration: 0.75
+  };
+
+  let shoe = [], dealt = 0, rc = 0;
+
+  function buildShoe() {
+    shoe = [];
+    for (let d = 0; d < RULES.decks; d++)
+      for (const [s, red] of SUITS)
+        for (const r of RANKS) shoe.push({ r: r, s: s, red: !!red });
+    for (let i = shoe.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = shoe[i]; shoe[i] = shoe[j]; shoe[j] = t;
+    }
+    dealt = 0; rc = 0;
+  }
+  function shoeTotal() { return RULES.decks * 52; }
+  function cutReached() { return dealt >= shoeTotal() * RULES.penetration; }
+  function draw() {
+    if (dealt >= shoe.length) buildShoe();
+    const c = shoe[dealt++];
+    rc += hiloTag(c.r);
+    return c;
+  }
+  function decksLeft() { return Math.max(0.25, (shoeTotal() - dealt) / 52); }
+  function trueCount() { return rc / decksLeft(); }
+
+  // ============================ game state ============================
+  const S = {
+    phase: "betting",      // betting | insurance | player | dealer | done
+    bet: 5,
+    bank: 500,
+    start: 500,
+    hands: [],
+    active: 0,
+    dealer: [],
+    holeDown: true,
+    insurance: 0,
+    handsPlayed: 0, won: 0, lost: 0, pushed: 0,
+    decisions: 0, correct: 0, streak: 0, best: 0,
+    leaks: {},
+    history: [],
+    pendingShuffle: false
+  };
+
+  function newHand(bet, cards, fromSplit) {
+    return { cards: cards, bet: bet, fromSplit: !!fromSplit, done: false,
+             doubled: false, surrendered: false, result: null, net: 0 };
+  }
+
+  function canFor(hand) {
+    const v = handValue(hand.cards), first = hand.cards.length === 2;
+    const dOk = RULES.doubleOn === "any" ? true
+      : RULES.doubleOn === "9to11" ? (!v.soft && v.total >= 9 && v.total <= 11)
+      : (!v.soft && v.total >= 10 && v.total <= 11);
+    const aces = isPair(hand.cards) && cardValue(hand.cards[0].r) === 11;
+    const splitOk = first && isPair(hand.cards) &&
+      S.hands.length < RULES.maxHands && S.bank >= hand.bet &&
+      !(aces && hand.fromSplit);            // no re-splitting aces
+    return {
+      hit: !hand.done && !v.bust,
+      stand: !hand.done,
+      double: first && dOk && (!hand.fromSplit || RULES.das) && S.bank >= hand.bet,
+      split: splitOk,
+      surrender: first && !hand.fromSplit && RULES.surrender && S.hands.length === 1,
+      das: RULES.das,
+      h17: RULES.h17
+    };
+  }
+
+  // ============================== deal ==============================
+  function deal() {
+    if (S.pendingShuffle || cutReached()) { buildShoe(); S.pendingShuffle = false; }
+    if (S.bank < S.bet) { say("Not enough bankroll for that bet. Lower the bet or reset the session."); return; }
+    S.bank -= S.bet;
+    S.hands = [newHand(S.bet, [draw(), draw()], false)];
+    S.dealer = [draw(), draw()];
+    S.holeDown = true;
+    S.active = 0;
+    S.insurance = 0;
+    S.phase = "player";
+
+    const up = S.dealer[0].r;
+    if (RULES.peek && upKey(up) === "A") { S.phase = "insurance"; render(); return; }
+    afterPeek();
+  }
+
+  function afterPeek() {
+    const dv = handValue(S.dealer);
+    const dealerBJ = RULES.peek && dv.total === 21 && upKey(S.dealer[0].r) === "10";
+    if (dealerBJ) { S.holeDown = false; settle(); return; }
+    if (isBlackjack(S.hands[0])) { S.holeDown = false; settle(); return; }
+    S.phase = "player";
+    render();
+  }
+
+  function takeInsurance(yes) {
+    const dv = handValue(S.dealer);
+    const dealerBJ = dv.total === 21;
+    const INS_WHY = "Insurance is a separate bet on the dealer's hole card, not on your hand. " +
+      "It pays 2:1, so it needs to win one time in three; in a six-deck shoe the dealer has blackjack " +
+      "30.9% of the time. The gap is the house edge, and it does not care what you are holding. " +
+      "Only a true count of about +3 or higher flips it.";
+    if (yes) {
+      const amt = Math.min(S.bet / 2, S.bank);
+      S.bank -= amt;
+      S.insurance = amt;
+      grade({ spot: "Insurance vs A", played: "Insurance", correct: "No insurance", ok: false, why: INS_WHY, ref: "" });
+    } else {
+      grade({ spot: "Insurance vs A", played: "No insurance", correct: "No insurance", ok: true, why: INS_WHY });
+    }
+    if (dealerBJ) {
+      if (S.insurance) S.bank += S.insurance * 3;    // stake back plus 2:1
+      S.holeDown = false;
+      settle();
+      return;
+    }
+    if (S.insurance) S.insurance = -S.insurance;      // lost; recorded as a negative
+    if (isBlackjack(S.hands[0])) { S.holeDown = false; settle(); return; }
+    S.phase = "player";
+    render();
+  }
+
+  // ============================= actions =============================
+  function act(a) {
+    if (S.phase !== "player") return;
+    const h = S.hands[S.active], can = canFor(h);
+    if (!can[a]) return;
+
+    if (COACH) {
+      const d = advise(h.cards, S.dealer[0].r, can);
+      grade({
+        spot: spotLabel(h, d),
+        played: ACTION_NAME[a],
+        correct: ACTION_NAME[d.action],
+        ok: d.action === a,
+        why: reasoning(d, can),
+        ref: chartRef(d)
+      });
+    }
+
+    if (a === "hit") {
+      h.cards.push(draw());
+      if (handValue(h.cards).bust) { h.done = true; h.result = "bust"; advance(); }
+      else render();
+      return;
+    }
+    if (a === "stand") { h.done = true; advance(); return; }
+    if (a === "surrender") {
+      h.done = true; h.surrendered = true;
+      S.holeDown = false;
+      settle();
+      return;
+    }
+    if (a === "double") {
+      S.bank -= h.bet;
+      h.bet *= 2;
+      h.doubled = true;
+      h.cards.push(draw());
+      h.done = true;
+      advance();
+      return;
+    }
+    if (a === "split") {
+      const moved = h.cards.pop();
+      const nh = newHand(h.bet, [moved], true);
+      h.fromSplit = true;
+      S.bank -= h.bet;
+      S.hands.splice(S.active + 1, 0, nh);
+      h.cards.push(draw());
+      nh.cards.push(draw());
+      if (cardValue(h.cards[0].r) === 11) {       // split aces: one card each, no more
+        h.done = true; nh.done = true;
+        advance();
+        return;
+      }
+      render();
+      return;
+    }
+  }
+
+  function advance() {
+    while (S.active < S.hands.length && S.hands[S.active].done) S.active++;
+    if (S.active < S.hands.length) { render(); return; }
+    // everyone finished — does the dealer need to draw?
+    S.holeDown = false;
+    const live = S.hands.some(h => !h.surrendered && !handValue(h.cards).bust);
+    if (!live) { settle(); return; }
+    S.phase = "dealer";
+    render();
+    dealerPlay();
+  }
+
+  function dealerPlay() {
+    const step = () => {
+      const v = handValue(S.dealer);
+      const mustHit = v.total < 17 || (v.total === 17 && v.soft && RULES.h17);
+      if (!mustHit) { settle(); return; }
+      S.dealer.push(draw());
+      render();
+      setTimeout(step, 420);
+    };
+    setTimeout(step, 420);
+  }
+
+  // ============================= settle =============================
+  function settle() {
+    S.phase = "done";
+    const dv = handValue(S.dealer);
+    const dealerBJ = S.dealer.length === 2 && dv.total === 21;
+    let net = 0;
+
+    S.hands.forEach(h => {
+      const pv = handValue(h.cards);
+      const pbj = isBlackjack(h);
+      if (h.surrendered) { h.result = "surrender"; h.net = -h.bet / 2; S.bank += h.bet / 2; S.lost++; }
+      else if (pbj && dealerBJ) { h.result = "push"; h.net = 0; S.bank += h.bet; S.pushed++; }
+      else if (pbj) { h.result = "blackjack"; h.net = h.bet * RULES.bjPay; S.bank += h.bet + h.net; S.won++; }
+      else if (pv.bust) { h.result = "bust"; h.net = -h.bet; S.lost++; }
+      else if (dealerBJ) { h.result = "lose"; h.net = -h.bet; S.lost++; }
+      else if (dv.bust) { h.result = "win"; h.net = h.bet; S.bank += h.bet * 2; S.won++; }
+      else if (pv.total > dv.total) { h.result = "win"; h.net = h.bet; S.bank += h.bet * 2; S.won++; }
+      else if (pv.total < dv.total) { h.result = "lose"; h.net = -h.bet; S.lost++; }
+      else { h.result = "push"; h.net = 0; S.bank += h.bet; S.pushed++; }
+      net += h.net;
+    });
+
+    if (S.insurance > 0) net += S.insurance * 2;        // paid 2:1, stake returned above
+    else if (S.insurance < 0) net += S.insurance;       // insurance lost
+
+    S.handsPlayed++;
+    S.history.unshift({
+      n: S.handsPlayed,
+      hands: S.hands.map(h => ({
+        cards: h.cards.slice(), total: handValue(h.cards).total,
+        bust: handValue(h.cards).bust, result: h.result, bet: h.bet, dbl: h.doubled
+      })),
+      up: S.dealer[0], dealer: S.dealer.slice(), dTotal: dv.total, dBust: dv.bust,
+      net: net, mistakes: handMistakes
+    });
+    if (S.history.length > 40) S.history.pop();
+    handMistakes = 0;
+    if (cutReached()) S.pendingShuffle = true;
+    render();
+  }
+
+  // ============================== coach ==============================
+  let COACH = true, HINT = false, handMistakes = 0;
+
+  function spotLabel(h, d) {
+    if (d.chart === "pair") {
+      const pv = d.row;
+      return (pv === 11 ? "A,A" : pv === 10 ? "10,10" : pv + "," + pv) + " vs " + d.upk;
+    }
+    return (d.chart === "soft" ? "Soft " : "Hard ") + d.row + " vs " + d.upk;
+  }
+  function chartRef(d) {
+    const name = d.chart === "pair" ? "pairs" : d.chart === "soft" ? "soft totals" : "hard totals";
+    return "the " + name + " chart, row " + (d.chart === "pair"
+      ? (d.row === 11 ? "A,A" : d.row === 10 ? "10,10" : d.row + "," + d.row)
+      : (d.chart === "soft" ? (d.row === 12 ? "A,A" : "A," + (d.row - 11)) : d.row)) +
+      ", column " + d.upk + " reads <b>" + d.code + "</b>";
+  }
+
+  const verdictEl = document.getElementById("verdict");
+
+  // g = { spot, played, correct, ok, why, ref }
+  function grade(g) {
+    if (!COACH) return;
+    S.decisions++;
+    if (g.ok) {
+      S.correct++; S.streak++;
+      if (S.streak > S.best) S.best = S.streak;
+      verdictEl.className = "verdict ok";
+      verdictEl.innerHTML = '<div class="hd">Correct · ' + g.spot + "</div><b>" +
+        g.played + "</b> is the chart play. " + g.why;
+    } else {
+      S.streak = 0;
+      handMistakes++;
+      const key = g.spot + "|" + g.played;
+      if (!S.leaks[key]) S.leaks[key] = { spot: g.spot, played: g.played, correct: g.correct, n: 0 };
+      S.leaks[key].n++;
+      verdictEl.className = "verdict no";
+      verdictEl.innerHTML = '<div class="hd">Mistake · ' + g.spot + "</div>You played <b>" +
+        g.played + "</b>. Basic strategy says <b>" + g.correct + "</b>" +
+        (g.ref ? " — " + g.ref : "") + ". " + g.why;
+    }
+    renderCoach();
+  }
+
+  // ============================== render ==============================
+  const $ = id => document.getElementById(id);
+  const root = $("root");
+
+  function cardHtml(c, opts) {
+    opts = opts || {};
+    if (opts.down) return '<div class="card down' + (opts.small ? " small" : "") +
+      '" role="img" aria-label="face-down card"></div>';
+    return '<div class="card' + (c.red ? " red" : "") + (opts.small ? " small" : "") +
+      '" role="img" aria-label="' + c.r + " of " + suitName(c.s) + '">' +
+      '<span class="c">' + c.r + '</span>' +
+      '<span class="r">' + c.r + '</span><span class="s">' + c.s + "</span></div>";
+  }
+  function suitName(s) { return s === "♠" ? "spades" : s === "♥" ? "hearts" : s === "♦" ? "diamonds" : "clubs"; }
+  function cardsHtml(list, opts) { return list.map(c => cardHtml(c, opts)).join(""); }
+  function n1(x) { return (Math.round(x * 10) / 10).toFixed(1); }
+  function money(x) { return (x > 0 ? "+" : x < 0 ? "−" : "") + n1(Math.abs(x)).replace(/\.0$/, ""); }
+
+  function say(t) { $("msg").innerHTML = t; }
+
+  function render() {
+    // ---- dealer
+    const dv = handValue(S.dealer);
+    if (!S.dealer.length) {
+      $("dealerCards").innerHTML = "";
+      $("dealerTot").textContent = "—";
+      $("dealerFlag").textContent = "";
+    } else if (S.holeDown) {
+      $("dealerCards").innerHTML = cardHtml(S.dealer[0]) + cardHtml(null, { down: true });
+      const uv = cardValue(S.dealer[0].r);
+      $("dealerTot").textContent = uv === 11 ? "A" : uv;
+      $("dealerTot").className = "tot";
+      $("dealerFlag").innerHTML = '<span style="color:var(--muted)">busts ' +
+        BUST_PCT[upKey(S.dealer[0].r)] + "% of the time</span>";
+    } else {
+      $("dealerCards").innerHTML = cardsHtml(S.dealer);
+      $("dealerTot").textContent = dv.total + (dv.soft && dv.total <= 21 ? " soft" : "");
+      $("dealerTot").className = "tot" + (dv.bust ? " bust" : "");
+      $("dealerFlag").innerHTML = dv.bust ? '<span style="color:var(--good)">bust</span>'
+        : (S.dealer.length === 2 && dv.total === 21 ? '<span style="color:var(--bad)">blackjack</span>' : "");
+    }
+
+    // ---- player hands
+    $("playerHands").innerHTML = S.hands.length
+      ? S.hands.map((h, i) => {
+          const v = handValue(h.cards);
+          const live = S.phase === "player" && i === S.active;
+          const res = h.result;
+          const cls = res === "win" || res === "blackjack" ? "win"
+            : res === "push" ? "push" : res ? "lose" : "";
+          const label = res === "blackjack" ? "blackjack" : res === "surrender" ? "surrendered" : res || "";
+          return '<div class="hand' + (live ? " live" : "") + (h.done && S.phase !== "player" ? " settled" : "") + '">' +
+            '<div class="cardrow">' + cardsHtml(h.cards) + "</div>" +
+            '<div class="hand-meta"><span>' + (v.bust ? "bust " + v.total : (v.soft ? "soft " : "") + v.total) +
+            "</span><span>· bet " + n1(h.bet).replace(/\.0$/, "") + (h.doubled ? " (doubled)" : "") + "</span>" +
+            (label ? '<span class="res ' + cls + '">' + label + "</span>" : "") + "</div></div>";
+        }).join("")
+      : '<div class="hand"><div class="cardrow"></div><div class="hand-meta">—</div></div>';
+
+    const pv = S.hands.length ? handValue(S.hands[S.active] ? S.hands[S.active].cards : S.hands[0].cards) : null;
+    if (pv) {
+      $("playerTot").textContent = (pv.soft && !pv.bust ? "soft " : "") + pv.total;
+      $("playerTot").className = "tot" + (pv.bust ? " bust" : "");
+    } else { $("playerTot").textContent = "—"; $("playerTot").className = "tot"; }
+
+    renderActions();
+    renderStats();
+    renderHistory();
+    renderLeaks();
+    renderCount();
+  }
+
+  function btn(label, action, key, cls) {
+    return '<button class="btn big ' + (cls || "") + '" data-act="' + action + '" type="button">' +
+      label + '<span class="kb">' + key + "</span></button>";
+  }
+
+  function renderActions() {
+    const a = $("actions");
+    if (S.phase === "insurance") {
+      a.innerHTML = btn("Insurance", "ins-yes", "", "") + btn("No insurance", "ins-no", "", "primary");
+      say("Dealer shows an ace. <b>Insurance</b> pays 2:1 but the dealer has blackjack only 30.9% of the time — it needs one in three. Decline it.");
+      return;
+    }
+    if (S.phase === "player") {
+      const h = S.hands[S.active], can = canFor(h);
+      let html = btn("Hit", "hit", "H") + btn("Stand", "stand", "S");
+      if (can.double) html += btn("Double", "double", "D");
+      if (can.split) html += btn("Split", "split", "P");
+      if (can.surrender) html += btn("Surrender", "surrender", "R");
+      a.innerHTML = html;
+      const d = advise(h.cards, S.dealer[0].r, can);
+      if (HINT) say("Chart says <b>" + ACTION_NAME[d.action] + "</b> — " + chartRef(d) + ".");
+      else say(S.hands.length > 1 ? "Playing hand " + (S.active + 1) + " of " + S.hands.length + "." :
+        "Your move. Dealer's " + upKey(S.dealer[0].r) + " showing.");
+      return;
+    }
+    if (S.phase === "dealer") { a.innerHTML = ""; say("Dealer draws…"); return; }
+    // betting / done
+    a.innerHTML = '<button class="btn big primary" data-act="deal" type="button">Deal' +
+      '<span class="kb">Enter</span></button>';
+    if (S.phase === "done") {
+      const last = S.history[0];
+      const net = last ? last.net : 0;
+      const bits = S.hands.map(h => {
+        const v = handValue(h.cards);
+        return (h.result === "blackjack" ? "blackjack" : h.result) + " with " + v.total;
+      }).join(", ");
+      say("<b>" + money(net) + "</b> — " + bits + ". Dealer " +
+        (handValue(S.dealer).bust ? "busts with " + handValue(S.dealer).total : "has " + handValue(S.dealer).total) +
+        "." + (S.pendingShuffle ? " <span style='color:var(--muted)'>Cut card reached — shuffling before the next hand.</span>" : ""));
+    } else say("Pick a bet and deal.");
+  }
+
+  function renderStats() {
+    $("tBank").textContent = n1(S.bank).replace(/\.0$/, "");
+    const net = S.bank - S.start;
+    const ne = $("tNet");
+    ne.textContent = money(net);
+    ne.className = net > 0 ? "pos" : net < 0 ? "neg" : "";
+    $("tHands").textContent = S.handsPlayed;
+    $("tWon").textContent = S.won;
+    $("tLost").textContent = S.lost;
+    $("tPush").textContent = S.pushed;
+    $("betShow").textContent = "Betting " + S.bet + " per hand · bankroll " + n1(S.bank).replace(/\.0$/, "");
+    const pct = Math.min(100, Math.round(dealt / shoeTotal() * 100));
+    $("penBar").style.width = pct + "%";
+    $("penPct").textContent = pct + "%";
+    $("penLab").textContent = dealt === 0 ? "Shoe freshly shuffled"
+      : S.pendingShuffle ? "Cut card out — shuffling next hand"
+      : n1(decksLeft()) + " of " + RULES.decks + " decks left";
+    $("tableSub").textContent = RULES.decks + (RULES.decks === 1 ? " deck" : " decks") +
+      " · dealer " + (RULES.h17 ? "hits" : "stands on") + " soft 17 · blackjack pays " +
+      (RULES.bjPay === 1.5 ? "3:2" : RULES.bjPay === 1.2 ? "6:5" : "1:1") +
+      (RULES.das ? " · DAS" : " · no DAS") + (RULES.surrender ? " · surrender" : "");
+    renderCoach();
+  }
+
+  function renderCoach() {
+    $("tDec").textContent = S.decisions;
+    $("tAcc").innerHTML = S.decisions
+      ? Math.round(S.correct / S.decisions * 100) + "<small>%</small>" : "—";
+    $("tStreak").innerHTML = S.streak + (S.best > S.streak ? '<small> best ' + S.best + "</small>" : "");
+  }
+
+  function renderCount() {
+    if ($("countPanel").hidden) return;
+    const tc = trueCount();
+    $("tRC").textContent = (rc > 0 ? "+" : "") + rc;
+    $("tTC").textContent = (tc > 0 ? "+" : "") + n1(tc);
+    $("tDL").textContent = n1(decksLeft());
+    $("countNote").innerHTML = tc >= 3
+      ? "Ten-rich. This is the only situation in which insurance is a winning bet, and the count where a counter would have the most money on the table."
+      : tc >= 1 ? "Mildly in your favour. Roughly break-even against a 0.5% house edge."
+      : tc <= -1 ? "Low-card rich — the dealer's spot. A counter would be betting the table minimum here."
+      : "Close to neutral. Flat-bet and play the chart.";
+  }
+
+  function renderHistory() {
+    const tb = document.querySelector("#histTable tbody");
+    if (!S.history.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">No hands yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = S.history.slice(0, 25).map(h => {
+      const yours = h.hands.map(x =>
+        '<span style="white-space:nowrap">' + x.cards.map(c => c.r).join("-") +
+        " <span style='color:var(--muted)'>(" + x.total + ")</span></span>").join("<br>");
+      const res = h.hands.map(x => x.result).join(", ");
+      const cls = h.net > 0 ? "win" : h.net < 0 ? "lose" : "push";
+      return "<tr" + (h.mistakes ? ' class="hi"' : "") + "><td class='n'>" + h.n + "</td><td>" + yours +
+        "</td><td class='num'>" + upKey(h.up.r) + "</td><td class='num'>" +
+        (h.dBust ? "bust " + h.dTotal : h.dTotal) + "</td><td class='de'>" + res +
+        "</td><td class='num " + cls + "' style='color:var(--" + (h.net > 0 ? "good" : h.net < 0 ? "bad" : "muted") + ")'>" +
+        money(h.net) + "</td><td class='de'>" +
+        (h.mistakes ? '<span style="color:var(--bad)">' + h.mistakes + " off-chart</span>" : "clean") +
+        "</td></tr>";
+    }).join("");
+  }
+
+  function renderLeaks() {
+    const tb = document.querySelector("#leakTable tbody");
+    const list = Object.keys(S.leaks).map(k => S.leaks[k]).sort((a, b) => b.n - a.n);
+    if (!list.length) {
+      tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Nothing yet — good.</td></tr>';
+      return;
+    }
+    tb.innerHTML = list.slice(0, 20).map(l =>
+      "<tr><td class='nm'>" + l.spot + "</td><td class='de'>" + l.played +
+      "</td><td class='nm' style='color:var(--good)'>" + l.correct + "</td><td class='num'>" + l.n + "</td></tr>"
+    ).join("");
+  }
+
+  // ======================== strategy chart UI ========================
+  const HARD_ROWS = [[ "5–8", 8], ["9", 9], ["10", 10], ["11", 11], ["12", 12], ["13", 13],
+                     ["14", 14], ["15", 15], ["16", 16], ["17", 17], ["18–21", 18]];
+  const SOFT_ROWS = [["A,2", 13], ["A,3", 14], ["A,4", 15], ["A,5", 16], ["A,6", 17],
+                     ["A,7", 18], ["A,8", 19], ["A,9", 20]];
+  const PAIR_ROWS = [["A,A", 11], ["10,10", 10], ["9,9", 9], ["8,8", 8], ["7,7", 7],
+                     ["6,6", 6], ["5,5", 5], ["4,4", 4], ["3,3", 3], ["2,2", 2]];
+
+  function rowLabelFor(chart, row) {
+    const t = chart === "hard" ? HARD_ROWS : chart === "soft" ? SOFT_ROWS : PAIR_ROWS;
+    const hit = t.filter(r => r[1] === row)[0];
+    return hit ? hit[0] : String(row);
+  }
+
+  function buildMatrix(elId, chart, rows) {
+    const el = $(elId);
+    el.style.gridTemplateColumns = "40px repeat(10, minmax(0,1fr))";
+    let html = '<div class="hd"></div>' + UPS.map(u => '<div class="hd">' + u + "</div>").join("");
+    rows.forEach(([label, row]) => {
+      html += '<div class="rh">' + label + "</div>";
+      UPS.forEach(u => {
+        const code = chartCode(chart, row, u, RULES.h17);
+        const base = code === "Rp" ? "P" : code.charAt(0) === "R" ? "H" : code;
+        const surr = code.charAt(0) === "R";
+        const letter = surr ? "R" : code.charAt(0);
+        const sup = code === "Ds" ? "s" : "";
+        html += '<button class="cell" type="button" role="gridcell" data-a="' +
+          (surr ? (code === "Rs" ? "S" : code === "Rp" ? "P" : "H") : (code === "Pd" ? "Pd" : base)) +
+          '" data-r="' + (surr ? 1 : 0) + '" data-chart="' + chart + '" data-row="' + row +
+          '" data-up="' + u + '" aria-label="' + label + " versus " + u + ": " + CODE_MEANING[code] + '">' +
+          letter + (sup ? '<span class="sup">' + sup + "</span>" : "") + "</button>";
+      });
+    });
+    el.innerHTML = html;
+  }
+
+  function buildCharts() {
+    buildMatrix("mxHard", "hard", HARD_ROWS);
+    buildMatrix("mxSoft", "soft", SOFT_ROWS);
+    buildMatrix("mxPair", "pair", PAIR_ROWS);
+    $("chartRules").textContent = RULES.decks + "D · " + (RULES.h17 ? "H17" : "S17") +
+      " · " + (RULES.das ? "DAS" : "no DAS") + " · " + (RULES.surrender ? "surrender" : "no surrender");
+    $("lgD").textContent = RULES.doubleOn === "any" ? "else hit" :
+      "only on " + (RULES.doubleOn === "9to11" ? "9–11" : "10–11") + ", else hit";
+    buildTableView();
+    const keep = pinned && document.querySelector('.cell[data-chart="' + pinned.dataset.chart +
+      '"][data-row="' + pinned.dataset.row + '"][data-up="' + pinned.dataset.up + '"]');
+    pinned = null;
+    const seed = keep || document.querySelector('.cell[data-chart="hard"][data-row="16"][data-up="10"]');
+    if (seed) { if (keep) { pinned = keep; keep.classList.add("pinned"); } showCell(seed); }
+  }
+
+  function buildTableView() {
+    const rows = [];
+    [["hard", HARD_ROWS], ["soft", SOFT_ROWS], ["pair", PAIR_ROWS]].forEach(([chart, list]) => {
+      list.forEach(([label, row]) => UPS.forEach(u => {
+        const code = chartCode(chart, row, u, RULES.h17);
+        rows.push("<tr><td class='de'>" + chart + "</td><td class='nm'>" + label +
+          "</td><td class='num'>" + u + "</td><td class='nm'>" + code +
+          "</td><td class='de'>" + CODE_MEANING[code] + "</td></tr>");
+      }));
+    });
+    document.querySelector("#tvTable tbody").innerHTML = rows.join("");
+  }
+
+  let pinned = null;
+  function showCell(btn) {
+    if (!btn || !btn.dataset) return;
+    const chart = btn.dataset.chart, row = +btn.dataset.row, u = btn.dataset.up;
+    if (!chart || !row || upIdx(u) < 0) return;
+    const code = chartCode(chart, row, u, RULES.h17);
+    const can = { double: true, split: chart === "pair", surrender: RULES.surrender, das: RULES.das, h17: RULES.h17 };
+    const action = resolve(code, can) || "hit";
+    const label = rowLabelFor(chart, row);
+    $("cellHero").innerHTML = ACTION_NAME[action] + ' <small>' + label + " vs " + u + "</small>";
+    $("cellKv").innerHTML = [
+      ["Chart", chart === "pair" ? "Pairs" : chart === "soft" ? "Soft totals" : "Hard totals"],
+      ["Cell code", "<b>" + code + "</b>"],
+      ["Means", CODE_MEANING[code]],
+      ["Dealer busts", BUST_PCT[u] + "%"],
+      ["Rules", (RULES.h17 ? "H17" : "S17") + " · " + (RULES.das ? "DAS" : "no DAS") +
+        " · " + (RULES.surrender ? "LS" : "no LS")]
+    ].map(x => "<dt>" + x[0] + "</dt><dd>" + x[1] + "</dd>").join("");
+    $("cellNote").innerHTML = reasoning({ chart: chart, row: row, upk: u, code: code }, can);
+  }
+
+  document.addEventListener("mouseover", e => {
+    const c = e.target.closest(".cell");
+    if (c && !pinned) showCell(c);
+  });
+  document.addEventListener("click", e => {
+    const c = e.target.closest(".cell");
+    if (!c) return;
+    document.querySelectorAll(".cell.pinned").forEach(x => x.classList.remove("pinned"));
+    if (pinned === c) { pinned = null; return; }
+    pinned = c; c.classList.add("pinned"); showCell(c);
+  });
+
+  // ============================== drill ==============================
+  const DQ = { on: false, cards: null, up: null, n: 0, correct: 0, streak: 0, best: 0 };
+
+  function randCard() {
+    const r = RANKS[Math.floor(Math.random() * RANKS.length)];
+    const [s, red] = SUITS[Math.floor(Math.random() * SUITS.length)];
+    return { r: r, s: s, red: !!red };
+  }
+  function nextDrill() {
+    // keep drawing until we get a two-card hand that is not a blackjack
+    let c;
+    do { c = [randCard(), randCard()]; } while (handValue(c).total === 21);
+    DQ.cards = c;
+    DQ.up = randCard();
+    if (!DQ.on) {
+      DQ.on = true;
+      const v = $("dqVerdict");
+      v.className = "verdict";
+      v.innerHTML = '<div class="hd">Your call</div>Pick the action with the highest expected value. ' +
+        "Wrong answers flash the cell on the chart above so you can see where it lives.";
+    }
+    renderDrill();
+  }
+  function drillCan() {
+    return { double: true, split: isPair(DQ.cards), surrender: RULES.surrender, das: RULES.das, h17: RULES.h17 };
+  }
+  function renderDrill() {
+    if (!DQ.cards) {
+      $("dqDealer").innerHTML = cardHtml(null, { down: true });
+      $("dqPlayer").innerHTML = cardHtml(null, { down: true }) + cardHtml(null, { down: true });
+      $("dqTot").textContent = "—";
+      $("dqActions").innerHTML = '<button class="btn big primary" data-dq="start" type="button">Start drill</button>';
+      return;
+    }
+    const v = handValue(DQ.cards), can = drillCan();
+    $("dqDealer").innerHTML = cardHtml(DQ.up);
+    $("dqPlayer").innerHTML = cardsHtml(DQ.cards);
+    $("dqTot").textContent = (v.soft ? "soft " : "") + v.total;
+    let html = '<button class="btn big" data-dq="hit" type="button">Hit<span class="kb">H</span></button>' +
+      '<button class="btn big" data-dq="stand" type="button">Stand<span class="kb">S</span></button>' +
+      '<button class="btn big" data-dq="double" type="button">Double<span class="kb">D</span></button>';
+    if (can.split) html += '<button class="btn big" data-dq="split" type="button">Split<span class="kb">P</span></button>';
+    if (can.surrender) html += '<button class="btn big" data-dq="surrender" type="button">Surrender<span class="kb">R</span></button>';
+    html += '<button class="btn" data-dq="skip" type="button">Skip</button>';
+    $("dqActions").innerHTML = html;
+  }
+  function answerDrill(a) {
+    if (!DQ.on || !DQ.cards) return;
+    const can = drillCan();
+    if (a === "split" && !can.split) return;
+    if (a === "surrender" && !can.surrender) return;
+    const d = advise(DQ.cards, DQ.up.r, can);
+    DQ.n++;
+    const v = $("dqVerdict");
+    if (d.action === a) {
+      DQ.correct++; DQ.streak++;
+      if (DQ.streak > DQ.best) DQ.best = DQ.streak;
+      v.className = "verdict ok";
+      v.innerHTML = '<div class="hd">Correct · ' + spotLabel({}, d) + "</div><b>" +
+        ACTION_NAME[a] + "</b>. " + reasoning(d, can);
+    } else {
+      DQ.streak = 0;
+      v.className = "verdict no";
+      v.innerHTML = '<div class="hd">Wrong · ' + spotLabel({}, d) + "</div>You said <b>" +
+        ACTION_NAME[a] + "</b>; the chart says <b>" + ACTION_NAME[d.action] + "</b> — " +
+        chartRef(d) + ". " + reasoning(d, can);
+      flashCell(d);
+    }
+    $("dqAcc").innerHTML = Math.round(DQ.correct / DQ.n * 100) + "<small>%</small>";
+    $("dqN").textContent = DQ.n;
+    $("dqStreak").innerHTML = DQ.streak + (DQ.best > DQ.streak ? "<small> best " + DQ.best + "</small>" : "");
+    setTimeout(nextDrill, 120);
+  }
+  function flashCell(d) {
+    const sel = '.cell[data-chart="' + d.chart + '"][data-row="' + d.row + '"][data-up="' + d.upk + '"]';
+    const c = document.querySelector(sel);
+    if (!c) return;
+    c.classList.add("flash");
+    setTimeout(() => c.classList.remove("flash"), 1600);
+  }
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-dq]");
+    if (!b) return;
+    const a = b.dataset.dq;
+    if (a === "start" || a === "skip") { nextDrill(); return; }
+    answerDrill(a);
+  });
+
+  // ====================== inline glossary terms ======================
+  function markTerms(html) {
+    return html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, key, disp) => {
+      const k = key.trim().toLowerCase(), t = TERMS[k];
+      if (!t) return disp || key;
+      return '<button type="button" class="term" data-term="' + k + '">' + (disp || key) + "</button>";
+    });
+  }
+  document.querySelectorAll("[data-terms]").forEach(el => { el.innerHTML = markTerms(el.innerHTML); });
+
+  const pop = $("pop");
+  let popFor = null;
+  function showPop(el) {
+    const t = TERMS[el.dataset.term];
+    if (!t) return;
+    popFor = el;
+    pop.innerHTML = "<h4>" + t.title + "</h4>" + t.def + '<div class="hint">Click for the full glossary</div>';
+    pop.classList.add("show");
+    const r = el.getBoundingClientRect();
+    let x = r.left, y = r.bottom + 8;
+    if (x + pop.offsetWidth > innerWidth - 10) x = innerWidth - pop.offsetWidth - 10;
+    if (y + pop.offsetHeight > innerHeight - 10) y = r.top - pop.offsetHeight - 8;
+    pop.style.left = Math.max(10, x) + "px";
+    pop.style.top = Math.max(10, y) + "px";
+  }
+  function hidePop() { pop.classList.remove("show"); popFor = null; }
+  document.addEventListener("mouseover", e => {
+    const t = e.target.closest(".term");
+    if (t) showPop(t); else if (popFor && !pop.contains(e.target)) hidePop();
+  });
+  document.addEventListener("focusin", e => {
+    const t = e.target.closest(".term");
+    if (t) showPop(t); else hidePop();
+  });
+  document.addEventListener("click", e => {
+    const t = e.target.closest(".term");
+    if (!t) return;
+    hidePop();
+    openGlossary(t.dataset.term);
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") hidePop(); });
+  addEventListener("scroll", () => { if (popFor) showPop(popFor); }, { passive: true });
+
+  const gWrap = $("glossList"), gSearch = $("gSearch"), gEmpty = $("gEmpty");
+  gWrap.innerHTML = GLOSSARY.map(sec =>
+    '<div class="gsec"><h3>' + sec.g + '</h3><div class="glossgrid">' +
+    sec.items.map(it => '<div class="gcard" id="g-' + it[0] + '" data-k="' + it[0] + " " +
+      it[1].toLowerCase() + '"><h4>' + it[1] + "</h4><p>" + it[2] + "</p></div>").join("") +
+    "</div></div>").join("");
+
+  gSearch.addEventListener("input", () => {
+    const q = gSearch.value.trim().toLowerCase();
+    let shown = 0;
+    gWrap.querySelectorAll(".gcard").forEach(c => {
+      const hit = !q || c.dataset.k.includes(q) || c.textContent.toLowerCase().includes(q);
+      c.hidden = !hit; if (hit) shown++;
+    });
+    gWrap.querySelectorAll(".gsec").forEach(s => s.hidden = !s.querySelector(".gcard:not([hidden])"));
+    gEmpty.hidden = shown > 0;
+  });
+
+  function openGlossary(key) {
+    showTab("glossary");
+    gSearch.value = "";
+    gSearch.dispatchEvent(new Event("input"));
+    const card = $("g-" + key);
+    if (!card) return;
+    gWrap.querySelectorAll(".gcard.hit").forEach(c => c.classList.remove("hit"));
+    card.classList.add("hit");
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => card.classList.remove("hit"), 2600);
+  }
+
+  // ==================== counting tab tables & calc ====================
+  document.querySelector("#hiloTable tbody").innerHTML = HILO.map(r =>
+    "<tr><td class='nm'>" + r[0] + "</td><td class='num nm'>" + r[1] + "</td><td class='de'>" + r[2] + "</td></tr>"
+  ).join("");
+
+  document.querySelector("#devTable tbody").innerHTML = DEVIATIONS.map((r, i) =>
+    "<tr" + (i === 0 ? ' class="hi"' : "") + "><td class='nm'>" + r[0] + "</td><td class='de'>" + r[1] +
+    "</td><td class='nm'>" + r[2] + "</td><td class='num'>" + r[3] + "</td></tr>"
+  ).join("");
+
+  (function () {
+    const bank = $("cBank"), base = $("cBase"), tc = $("cTC");
+    function calc() {
+      const B = Math.max(1, +bank.value || 0);
+      const off = Math.max(0, +base.value || 0);
+      const T = +tc.value;
+      $("cTCval").textContent = (T > 0 ? "+" : "") + n1(T);
+      // each +1 of true count is worth ~0.5% to the player
+      const edge = (T * 0.5) - off;
+      const varPerHand = 1.32;                   // approx variance of one blackjack hand
+      const kelly = Math.max(0, (edge / 100) / varPerHand * B);
+      const half = kelly / 2;
+      $("cEdge").innerHTML = (edge > 0 ? "+" : "") + n1(edge) + "<small>%</small>";
+      $("cEdge").className = edge > 0 ? "pos" : edge < 0 ? "neg" : "";
+      $("cKelly").innerHTML = kelly < 0.05 ? "0" : n1(kelly) + "<small> units</small>";
+      $("cHalf").innerHTML = half < 0.05 ? "0" : n1(half) + "<small> units</small>";
+      const minBet = Math.max(1, B / 1000);
+      $("cSpread").innerHTML = kelly < minBet ? "sit out" : Math.round(half / minBet) + "<small>×</small>";
+      $("cNote").innerHTML = edge <= 0
+        ? "No edge at this count. A counter bets the minimum here, or does not play the hand at all — most of counting is waiting."
+        : "At a " + n1(edge) + "% edge, full Kelly is " + n1(kelly) + " units. Most practitioners bet half that: the growth rate barely changes and the swings roughly halve. Note how small the bets stay relative to bankroll — this is why counting needs a large roll, not a large count.";
+    }
+    [bank, base, tc].forEach(el => el.addEventListener("input", calc));
+    calc();
+  })();
+
+  // ============================== tabs ==============================
+  const TABS = ["play", "chart", "basics", "count", "glossary"];
+  function showTab(name) {
+    if (TABS.indexOf(name) < 0) name = "play";
+    TABS.forEach(t => {
+      $("tab-" + t).setAttribute("aria-selected", String(t === name));
+      $("view-" + t).hidden = t !== name;
+    });
+  }
+  TABS.forEach(t => $("tab-" + t).addEventListener("click", () => showTab(t)));
+
+  // ============================ controls ============================
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const a = b.dataset.act;
+    if (a === "deal") { deal(); return; }
+    if (a === "ins-yes") { takeInsurance(true); return; }
+    if (a === "ins-no") { takeInsurance(false); return; }
+    act(a);
+  });
+
+  document.querySelectorAll("[data-bet]").forEach(b => b.addEventListener("click", () => {
+    S.bet = +b.dataset.bet;
+    document.querySelectorAll("[data-bet]").forEach(x => x.classList.toggle("active", x === b));
+    renderStats();
+  }));
+
+  const coachBtn = $("coachBtn");
+  coachBtn.addEventListener("click", () => {
+    COACH = !COACH;
+    coachBtn.setAttribute("aria-pressed", String(COACH));
+    $("coachSub").textContent = COACH
+      ? "Graded against basic strategy for the current rules."
+      : "Grading off — decisions are not checked.";
+  });
+
+  const hintBtn = $("hintBtn");
+  hintBtn.addEventListener("click", () => {
+    HINT = !HINT;
+    hintBtn.setAttribute("aria-pressed", String(HINT));
+    renderActions();
+  });
+
+  const countBtn = $("countBtn"), countPanel = $("countPanel");
+  countBtn.addEventListener("click", () => {
+    const on = countPanel.hidden;
+    countPanel.hidden = !on;
+    countBtn.setAttribute("aria-pressed", String(on));
+    renderCount();
+  });
+
+  const rulesBtn = $("rulesBtn"), rulesRow = $("rulesRow");
+  rulesBtn.addEventListener("click", () => {
+    const on = rulesRow.hidden;
+    rulesRow.hidden = !on;
+    rulesBtn.setAttribute("aria-pressed", String(on));
+  });
+
+  function ruleChanged(resetShoe) {
+    if (resetShoe) buildShoe();
+    buildCharts();
+    render();
+  }
+  $("rDecks").addEventListener("change", e => { RULES.decks = +e.target.value; ruleChanged(true); });
+  $("rS17").addEventListener("change", e => { RULES.h17 = e.target.value === "h"; ruleChanged(false); });
+  $("rBjPay").addEventListener("change", e => { RULES.bjPay = +e.target.value; ruleChanged(false); });
+  $("rDouble").addEventListener("change", e => { RULES.doubleOn = e.target.value; ruleChanged(false); });
+  [["rDas", "das"], ["rSurr", "surrender"], ["rPeek", "peek"]].forEach(([id, key]) => {
+    $(id).addEventListener("click", () => {
+      RULES[key] = !RULES[key];
+      $(id).setAttribute("aria-pressed", String(RULES[key]));
+      ruleChanged(false);
+    });
+  });
+
+  $("resetBtn").addEventListener("click", () => {
+    S.bank = 500; S.start = 500; S.hands = []; S.dealer = []; S.phase = "betting";
+    S.handsPlayed = S.won = S.lost = S.pushed = 0;
+    S.decisions = S.correct = S.streak = S.best = 0;
+    S.leaks = {}; S.history = []; S.insurance = 0; S.pendingShuffle = false;
+    handMistakes = 0;
+    buildShoe();
+    verdictEl.className = "verdict";
+    verdictEl.innerHTML = '<div class="hd">Waiting</div>Session reset. Deal a hand.';
+    render();
+  });
+
+  const texBtn = $("texBtn");
+  texBtn.addEventListener("click", () => {
+    const on = root.classList.toggle("texture");
+    texBtn.setAttribute("aria-pressed", String(on));
+  });
+
+  const tvBtn = $("tvBtn"), tv = $("tableview");
+  tvBtn.addEventListener("click", () => {
+    const on = tv.hidden;
+    tv.hidden = !on;
+    tvBtn.setAttribute("aria-pressed", String(on));
+  });
+
+  const themeBtn = $("themeBtn");
+  function setTheme(t) {
+    document.documentElement.dataset.theme = t;
+    themeBtn.textContent = t === "dark" ? "Light mode" : "Dark mode";
+  }
+  setTheme(document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  themeBtn.addEventListener("click", () =>
+    setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+
+  // =========================== keyboard ===========================
+  const KEY = { h: "hit", s: "stand", d: "double", p: "split", r: "surrender" };
+  document.addEventListener("keydown", e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "select" || tag === "textarea") return;
+    const onPlay = !$("view-play").hidden, onChart = !$("view-chart").hidden;
+    const k = e.key.toLowerCase();
+    if (onPlay && (e.key === "Enter" || e.key === " ") && (S.phase === "betting" || S.phase === "done")) {
+      e.preventDefault(); deal(); return;
+    }
+    if (onPlay && S.phase === "insurance" && (k === "y" || k === "n")) {
+      e.preventDefault(); takeInsurance(k === "y"); return;
+    }
+    if (!KEY[k]) return;
+    if (onPlay && S.phase === "player") { e.preventDefault(); act(KEY[k]); return; }
+    if (onChart && DQ.on) { e.preventDefault(); answerDrill(KEY[k]); return; }
+  });
+
+  // ============================== init ==============================
+  buildShoe();
+  buildCharts();
+  document.querySelector('[data-bet="5"]').classList.add("active");
+  renderDrill();
+  render();
+
+  const fromHash = decodeURIComponent(location.hash.replace("#", "")).toLowerCase();
+  if (TABS.indexOf(fromHash) >= 0) { showTab(fromHash); scrollTo(0, 0); } else showTab("play");
+})();
+</script>
+</body>
+</html>

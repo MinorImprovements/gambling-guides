@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Texas Hold'em — Position & Preflop Selection</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --plane:          #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --muted:          #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    /* ordinal tier ramp — one hue, strong -> weak (validated, light mode) */
+    --tier-r:         #184f95;
+    --tier-o:         #2a78d6;
+    --tier-y:         #86b6ef;
+    --tier-f:         #e1e0d9;
+    --ink-on-r:       #ffffff;
+    --ink-on-o:       #ffffff;
+    --ink-on-y:       #0b0b0b;
+    --ink-on-f:       #52514e;
+    --felt:           #eef1ee;
+    --accent:         #184f95;
+    --suit-red:       #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --plane:          #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted:          #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --border:         rgba(255,255,255,0.10);
+      --tier-r:         #86b6ef;
+      --tier-o:         #3987e5;
+      --tier-y:         #1c5cab;
+      --tier-f:         #2c2c2a;
+      --ink-on-r:       #0b0b0b;
+      --ink-on-o:       #ffffff;
+      --ink-on-y:       #ffffff;
+      --ink-on-f:       #898781;
+      --felt:           #202221;
+      --accent:         #3987e5;
+      --suit-red:       #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --plane:          #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted:          #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+    --tier-r:         #86b6ef;
+    --tier-o:         #3987e5;
+    --tier-y:         #1c5cab;
+    --tier-f:         #2c2c2a;
+    --ink-on-r:       #0b0b0b;
+    --ink-on-o:       #ffffff;
+    --ink-on-y:       #ffffff;
+    --ink-on-f:       #898781;
+    --felt:           #202221;
+    --accent:         #3987e5;
+    --suit-red:       #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--plane);
+    color: var(--text-primary);
+  }
+  .viz-root { background: var(--plane); color: var(--text-primary); min-height: 100vh; padding: 20px; }
+
+  header.page { max-width: 1180px; margin: 0 auto 14px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  header.page h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header.page p { margin: 2px 0 0; font-size: 13px; color: var(--text-secondary); max-width: 62ch; }
+  header.page .spacer { flex: 1 1 40px; }
+
+  .controls { max-width: 1180px; margin: 0 auto 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    font: inherit; font-size: 12px; line-height: 1;
+    padding: 7px 11px; border-radius: 7px;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); cursor: pointer;
+  }
+  .btn:hover { border-color: var(--axis); }
+  .btn[aria-pressed="true"], .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .btn[aria-pressed="true"], :root[data-theme="dark"] .btn.active { color: #0b0b0b; }
+  .ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 2px; }
+
+  .layout { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: minmax(420px, 1fr) minmax(520px, 1.08fr); align-items: start; }
+  @media (max-width: 1040px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel h2 { font-size: 13px; margin: 0 0 2px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-secondary); }
+  .panel .sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+  /* ---------- table diagram ---------- */
+  .table-wrap { position: relative; width: 100%; aspect-ratio: 600 / 470; max-width: 600px; margin: 0 auto; }
+  .table-wrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .seat {
+    position: absolute; transform: translate(-50%, -50%);
+    font: inherit; font-size: 11px; line-height: 1.15;
+    padding: 6px 8px; min-width: 84px; text-align: center;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 2px solid var(--axis); border-radius: 8px; cursor: pointer;
+  }
+  .seat .nm { display: block; font-weight: 650; letter-spacing: .02em; }
+  .seat .meta { display: block; font-size: 9.5px; color: var(--muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .seat:hover { border-color: var(--accent); }
+  .seat[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .seat[aria-pressed="true"] .meta { color: rgba(255,255,255,.78); }
+  :root[data-theme="dark"] .seat[aria-pressed="true"] { color: #0b0b0b; }
+  :root[data-theme="dark"] .seat[aria-pressed="true"] .meta { color: rgba(11,11,11,.7); }
+  .seat.step { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .puck {
+    position: absolute; transform: translate(-50%, -50%);
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--text-primary); color: var(--surface-1);
+    font-size: 9px; font-weight: 700; display: grid; place-items: center;
+    border: 2px solid var(--surface-1); pointer-events: none;
+  }
+  .flow-note { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 6px; }
+
+  /* ---------- matrix ---------- */
+  .matrix { display: grid; grid-template-columns: 22px repeat(13, minmax(0, 1fr)); gap: 2px; }
+  .mh { font-size: 10px; color: var(--muted); display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+  .cell {
+    position: relative; aspect-ratio: 1 / 1; border: 0; border-radius: 4px; padding: 0;
+    font: inherit; font-size: 10px; font-weight: 600; letter-spacing: -0.01em;
+    display: grid; place-items: center; cursor: pointer; overflow: hidden;
+    background: var(--tier-f); color: var(--ink-on-f);
+  }
+  .cell[data-t="R"] { background: var(--tier-r); color: var(--ink-on-r); }
+  .cell[data-t="O"] { background: var(--tier-o); color: var(--ink-on-o); }
+  .cell[data-t="Y"] { background: var(--tier-y); color: var(--ink-on-y); }
+  .cell[data-t="F"] { background: var(--tier-f); color: var(--ink-on-f); font-weight: 500; }
+  .cell .tag { position: absolute; top: 1px; right: 2px; font-size: 7.5px; font-weight: 700; opacity: .72; }
+  .cell[data-t="F"] .tag { opacity: .5; }
+  .cell:hover, .cell:focus-visible { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--text-primary); outline: none; z-index: 2; }
+  .cell.pinned { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent); z-index: 2; }
+  .cell.dim { opacity: .34; }
+  /* texture channel: off by default, on for CVD / print / forced-colors */
+  .viz-root.texture .cell[data-t="R"]::after,
+  .viz-root.texture .cell[data-t="O"]::after,
+  .viz-root.texture .cell[data-t="Y"]::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+  }
+  .viz-root.texture .cell[data-t="R"]::after { background: repeating-linear-gradient(45deg, rgba(0,0,0,.30) 0 2px, transparent 2px 5px); }
+  .viz-root.texture .cell[data-t="O"]::after { background: repeating-linear-gradient(135deg, rgba(0,0,0,.26) 0 2px, transparent 2px 7px); }
+  .viz-root.texture .cell[data-t="Y"]::after { background: repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 9px); }
+  @media (forced-colors: active) {
+    .cell { border: 1px solid; }
+  }
+
+  .diag-hint { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 8px; }
+
+  /* ---------- legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
+  .lg { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-secondary); }
+  .sw { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
+  .sw.r { background: var(--tier-r); } .sw.o { background: var(--tier-o); }
+  .sw.y { background: var(--tier-y); } .sw.f { background: var(--tier-f); }
+  .lg b { color: var(--text-primary); font-weight: 650; }
+
+  /* ---------- readout ---------- */
+  .readout { max-width: 1180px; margin: 16px auto 0; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1040px) { .readout { grid-template-columns: 1fr; } }
+  .hero { font-size: 30px; font-weight: 680; letter-spacing: -0.02em; line-height: 1; }
+  .hero small { font-size: 13px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; margin-top: 12px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .note { font-size: 12.5px; color: var(--text-secondary); margin: 12px 0 0; line-height: 1.5; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .chip { font-size: 10.5px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--grid); color: var(--muted); }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .chip.on { color: #0b0b0b; }
+
+  /* ---------- tabs ---------- */
+  .tabs { max-width: 1180px; margin: 0 auto 16px; display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); }
+  .tab {
+    font: inherit; font-size: 12.5px; padding: 9px 13px; cursor: pointer;
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--text-secondary); border-radius: 6px 6px 0 0;
+  }
+  .tab:hover { color: var(--text-primary); background: var(--surface-1); }
+  .tab[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 650; }
+
+  /* ---------- inline glossary terms ---------- */
+  .term {
+    font: inherit; font-size: inherit; color: inherit; background: none; border: 0;
+    padding: 0; cursor: help; border-bottom: 1px dashed var(--muted);
+  }
+  .term:hover, .term:focus-visible { border-bottom-style: solid; border-bottom-color: var(--accent); color: var(--text-primary); outline: none; }
+  .pop {
+    position: fixed; z-index: 60; max-width: 300px; opacity: 0; pointer-events: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary);
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .pop.show { opacity: 1; }
+  .pop h4 { margin: 0 0 3px; font-size: 12.5px; color: var(--text-primary); }
+  .pop .hint { margin-top: 6px; font-size: 10.5px; color: var(--muted); }
+
+  /* ---------- prose ---------- */
+  .prose { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); max-width: 76ch; }
+  .prose h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-primary); margin: 24px 0 8px; }
+  .prose h3:first-child { margin-top: 4px; }
+  .prose p { margin: 0 0 10px; }
+  .prose strong { color: var(--text-primary); font-weight: 650; }
+  .prose ol, .prose ul { margin: 0 0 10px; padding-left: 20px; }
+  .prose li { margin-bottom: 5px; }
+  .prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--text-primary); }
+  .callout { border-left: 3px solid var(--accent); background: var(--plane); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------- betting: calculator & tables ---------- */
+  .calc { border: 1px solid var(--border); border-radius: 11px; padding: 16px; background: var(--plane); margin: 16px 0 4px; }
+  .calc h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-primary); margin: 0 0 3px; }
+  .calc .sub { margin-bottom: 14px; }
+  .calcrow { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .field .num {
+    font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; width: 110px;
+    padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+  }
+  .field.wide { flex: 1 1 260px; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .rangeval { font-size: 12.5px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .presets { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .presets .btn { font-size: 11px; padding: 5px 8px; }
+
+  .sizebar { display: flex; gap: 2px; margin: 20px 0 6px; height: 32px; align-items: stretch; }
+  .sizebar .seg { border-radius: 4px; display: grid; place-items: center; font-size: 10.5px; font-weight: 650; overflow: hidden; white-space: nowrap; min-width: 2px; }
+  .sizebar .pot { background: var(--tier-y); color: var(--ink-on-y); }
+  .sizebar .bet { background: var(--tier-r); color: var(--ink-on-r); }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+  @media (max-width: 760px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 460px) { .tiles { grid-template-columns: 1fr; } }
+  .tile { border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px; background: var(--surface-1); }
+  .tile .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: block; margin-bottom: 5px; }
+  .tile .v { font-size: 22px; font-weight: 680; letter-spacing: -0.02em; color: var(--text-primary); line-height: 1; }
+  .tile .v small { font-size: 12px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; }
+  .tile .d { font-size: 11px; color: var(--text-secondary); margin-top: 6px; line-height: 1.4; }
+
+  .sizetable { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 4px; }
+  .sizetable th, .sizetable td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+  .sizetable th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .sizetable td:first-child { color: var(--text-primary); font-weight: 650; white-space: nowrap; }
+  .sizetable td:nth-child(2) { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sizetable td:last-child { color: var(--text-secondary); }
+  .wrapscroll { overflow-x: auto; }
+
+  /* ---------- starting-hand ranking list ---------- */
+  .hcbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 2px 0 14px; }
+  .hcwrap { max-height: 620px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .hclist { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .hclist th {
+    position: sticky; top: 0; z-index: 2; background: var(--surface-1);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+    font-weight: 600; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap;
+  }
+  .hclist td { padding: 6px 10px; border-bottom: 1px solid var(--grid); }
+  .hclist tbody tr { cursor: pointer; }
+  .hclist tbody tr:hover td { background: var(--plane); }
+  .hclist tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .hclist .r { color: var(--muted); width: 3.2em; }
+  .hclist .hd { color: var(--text-primary); font-weight: 650; font-size: 13px; width: 4.4em; }
+  .hclist .ty, .hclist .cu, .hclist .ch, .hclist .cb { color: var(--text-secondary); }
+  .hclist .sfrom { color: var(--text-secondary); white-space: nowrap; }
+  .hclist .pill { display: inline-block; min-width: 17px; text-align: center; padding: 1px 5px; border-radius: 4px; font-weight: 700; font-size: 10.5px; }
+  .hclist .pill.R { background: var(--tier-r); color: var(--ink-on-r); }
+  .hclist .pill.O { background: var(--tier-o); color: var(--ink-on-o); }
+  .hclist .pill.Y { background: var(--tier-y); color: var(--ink-on-y); }
+  .hclist .pill.F { background: var(--tier-f); color: var(--ink-on-f); }
+  .hclist tr.cut td {
+    background: var(--plane); color: var(--accent); font-size: 11px; font-weight: 650;
+    letter-spacing: .04em; padding: 7px 10px; border-bottom: 1px solid var(--accent); cursor: default;
+  }
+  .hclist tr.cut:hover td { background: var(--plane); }
+  .hclist tr.fold .hd { color: var(--text-secondary); font-weight: 500; }
+
+  /* ---------- hand rankings ---------- */
+  .ranks { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ranks td, .ranks th { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+  .ranks th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .ranks .n { color: var(--muted); font-variant-numeric: tabular-nums; width: 2.4em; }
+  .ranks .nm { color: var(--text-primary); font-weight: 650; white-space: nowrap; }
+  .ranks .ex { font-size: 14.5px; letter-spacing: .08em; white-space: nowrap; color: var(--text-primary); }
+  .ranks .de { color: var(--text-secondary); }
+  .red { color: var(--suit-red); }
+
+  /* ---------- glossary ---------- */
+  .gsec h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 20px 0 10px; }
+  .gsec:first-of-type h3 { margin-top: 6px; }
+  .glossgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+  .gcard { border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; background: var(--plane); scroll-margin-top: 20px; }
+  .gcard h4 { margin: 0 0 4px; font-size: 13px; color: var(--text-primary); }
+  .gcard p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+  .gcard.hit { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .search {
+    font: inherit; font-size: 13px; padding: 8px 11px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+    width: 280px; max-width: 100%;
+  }
+  .empty { font-size: 13px; color: var(--muted); padding: 10px 0; }
+
+  /* ---------- tooltip ---------- */
+  .tip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0;
+    transition: opacity .08s linear;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 9px; font-size: 11.5px; line-height: 1.35;
+    box-shadow: 0 6px 20px rgba(0,0,0,.22); max-width: 230px;
+  }
+  .tip.show { opacity: 1; }
+  .tip b { font-size: 13px; }
+  .tip .t2 { color: var(--text-secondary); }
+
+  /* ---------- table view ---------- */
+  .tableview { max-width: 1180px; margin: 16px auto 0; }
+  .tableview table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .tableview th, .tableview td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+  .tableview th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .tableview caption { text-align: left; font-size: 12px; color: var(--text-secondary); padding-bottom: 8px; }
+  [hidden] { display: none !important; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  footer.page { max-width: 1180px; margin: 18px auto 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+
+  <header class="page">
+    <div>
+      <h1>Texas Hold'em — Position &amp; Preflop Hand Selection</h1>
+      <p data-terms>Pick a seat to see the hands it can [[open]] with. Pick a hand to see the seats that can play it. [[8-handed]] [[cash game]], no [[limp|limpers]], [[bb|100bb]]. New here? Every underlined term has a definition — hover it, or start with <strong>How to play</strong>.</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="themeBtn" type="button">Light mode</button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" type="button" role="tab" id="tab-chart" aria-controls="view-chart" aria-selected="true">Chart</button>
+    <button class="tab" type="button" role="tab" id="tab-basics" aria-controls="view-basics" aria-selected="false">How to play</button>
+    <button class="tab" type="button" role="tab" id="tab-betting" aria-controls="view-betting" aria-selected="false">How to bet</button>
+    <button class="tab" type="button" role="tab" id="tab-holecards" aria-controls="view-holecards" aria-selected="false">Starting hands</button>
+    <button class="tab" type="button" role="tab" id="tab-rankings" aria-controls="view-rankings" aria-selected="false">Hand rankings</button>
+    <button class="tab" type="button" role="tab" id="tab-glossary" aria-controls="view-glossary" aria-selected="false">Glossary</button>
+  </nav>
+
+  <div id="view-chart" role="tabpanel" aria-labelledby="tab-chart">
+  <div class="controls">
+    <span class="ctl-label">View</span>
+    <button class="btn active" id="viewAll" type="button">All tiers</button>
+    <button class="btn" id="animBtn" type="button">Play action order</button>
+    <span class="ctl-label" style="margin-left:10px">Accessibility</span>
+    <button class="btn" id="texBtn" type="button" aria-pressed="false">Texture</button>
+    <button class="btn" id="tvBtn" type="button" aria-pressed="false">Table view</button>
+  </div>
+
+  <div class="layout">
+
+    <section class="panel" aria-labelledby="h-pos">
+      <h2 id="h-pos">1 · Table position</h2>
+      <p class="sub">Action moves clockwise. Numbers are preflop order — the later you act, the more you know.</p>
+      <div class="table-wrap" id="tableWrap">
+        <svg viewBox="0 0 600 470" aria-hidden="true">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/>
+            </marker>
+          </defs>
+          <ellipse cx="300" cy="230" rx="162" ry="96" fill="var(--felt)" stroke="var(--axis)" stroke-width="2"/>
+          <ellipse cx="300" cy="230" rx="108" ry="54" fill="none" stroke="var(--grid)" stroke-width="2" stroke-dasharray="4 6"/>
+          <path id="flowArc" fill="none" stroke="var(--muted)" stroke-opacity="0.6" stroke-width="2" marker-end="url(#arw)"/>
+          <text x="300" y="227" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="system-ui, sans-serif" letter-spacing="1.5">BOARD</text>
+          <text x="300" y="245" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="system-ui, sans-serif">flop · turn · river</text>
+        </svg>
+      </div>
+      <p class="flow-note" data-terms>[[blinds|Blinds]] act last [[preflop]], first after the [[flop]] — that is why they are [[defend|defended]], not [[open|opened]].</p>
+      <div class="legend" data-terms>
+        <span class="lg"><b>[[ep|EP]]</b> early · tight</span>
+        <span class="lg"><b>[[mp|MP]]</b> middle</span>
+        <span class="lg"><b>[[lp|LP]]</b> late · widest</span>
+        <span class="lg"><b>[[blinds|BL]]</b> blinds · [[oop|out of position]]</span>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-mx">
+      <h2 id="h-mx">2 · Preflop selection matrix</h2>
+      <p class="sub" id="mxSub">All 169 starting hands by tier. Suited hands above the diagonal, offsuit below, pairs on it.</p>
+      <div class="matrix" id="matrix" role="grid" aria-labelledby="h-mx"></div>
+      <div class="diag-hint" data-terms><span>◤ above diagonal = [[suited]]</span><span>[[pocket pair|pairs]] on diagonal ◥</span><span>below = [[offsuit]]</span></div>
+      <div class="legend">
+        <span class="lg"><span class="sw r"></span><b>R</b> Raise — any position</span>
+        <span class="lg"><span class="sw o"></span><b>O</b> Open — middle &amp; later</span>
+        <span class="lg"><span class="sw y"></span><b>Y</b> Late position only</span>
+        <span class="lg"><span class="sw f"></span><b>·</b> Fold</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="readout">
+    <section class="panel" aria-live="polite" aria-labelledby="h-rp">
+      <h2 id="h-rp">Position detail</h2>
+      <p class="sub" id="posSub">No seat selected</p>
+      <div class="hero" id="posHero">All tiers <small>169 hands</small></div>
+      <dl class="kv" id="posKv"></dl>
+      <p class="note" id="posNote">Select a seat on the table to filter the matrix to that position's opening range.</p>
+    </section>
+
+    <section class="panel" aria-live="polite" aria-labelledby="h-rh">
+      <h2 id="h-rh">Hand detail</h2>
+      <p class="sub" id="handSub">No hand selected</p>
+      <div class="hero" id="handHero">—</div>
+      <dl class="kv" id="handKv"></dl>
+      <p class="note" id="handNote">Hover or click a cell in the matrix. Arrow keys move, Enter pins a hand.</p>
+      <div class="chips" id="handChips"></div>
+    </section>
+  </div>
+
+  <section class="panel tableview" id="tableview" hidden aria-labelledby="h-tv">
+    <h2 id="h-tv">Table view</h2>
+    <p class="sub" id="tvSub"></p>
+    <div style="max-height:380px; overflow:auto">
+      <table id="tvTable"><caption id="tvCap"></caption>
+        <thead><tr><th>Hand</th><th>Type</th><th>Tier</th><th>Combos</th><th>Opened from</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+  </div><!-- /view-chart -->
+
+  <div id="view-basics" role="tabpanel" aria-labelledby="tab-basics" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>How Texas Hold'em works</h2>
+      <p class="sub">Everything the chart assumes you already know, in order.</p>
+      <div class="prose" data-terms>
+
+        <h3>The goal</h3>
+        <p>You get two private cards — your [[hole cards]]. Five more are dealt face up in the middle, shared by everyone — the [[board]]. At the end, the best five-card hand made from any mix of your two and the five shared cards wins the pot. You can also just win by [[bet|betting]] until everyone else [[fold|folds]], which is how most hands actually end. Nobody ever has to show cards they didn't get paid for.</p>
+
+        <h3>One hand, start to finish</h3>
+        <ol>
+          <li><strong>Blinds posted.</strong> Before any cards, the two players left of the [[button]] put money in: the [[sb|small blind]] and the [[bb|big blind]]. This is what makes the hand worth playing for — otherwise everyone could fold for free forever.</li>
+          <li><strong>Hole cards dealt</strong> — two to each player.</li>
+          <li><strong>[[preflop|Preflop]] betting.</strong> Starts with [[utg|UTG]], immediately left of the big blind, and moves [[clockwise]]. Each player [[fold|folds]], [[call|calls]], or [[raise|raises]]. <em>This is the only round the chart covers.</em></li>
+          <li><strong>The [[flop]]</strong> — three shared cards at once. Betting starts with the small blind now, not UTG.</li>
+          <li><strong>The [[turn]]</strong> — a fourth shared card, then betting.</li>
+          <li><strong>The [[river]]</strong> — the fifth and last shared card, then the final betting round.</li>
+          <li><strong>[[showdown]].</strong> If two or more players are still in, cards are turned over and the best five-card hand wins. See the <strong>Hand rankings</strong> tab for what beats what.</li>
+        </ol>
+        <p><em>How much</em> to put in at each of those betting rounds is its own subject — see the <strong>How to bet</strong> tab for sizing and the price calculator.</p>
+        <p>Then the button moves one seat clockwise and it all happens again — which is why position is a rotating turn, not a permanent advantage.</p>
+
+        <h3>Why position decides so much</h3>
+        <p>Acting later means acting with more information. From the [[button]] you have watched all seven other players make a decision before you have to make one; from [[utg|UTG]] you are guessing in the dark with seven players still to act behind you. Same cards, very different value. That is the whole reason one chart cannot answer "is this hand good" — the honest answer is "good <em>where</em>?"</p>
+        <p>So the ranges widen as you move around the table: about 11% of hands from UTG, about 44% from the button. Being last to act is worth roughly four times as many playable hands.</p>
+
+        <h3>Reading a hand like "AKs"</h3>
+        <p>Poker shorthand drops the suits, because only two things matter preflop: the two [[rank|ranks]], and whether they share a suit.</p>
+        <ul>
+          <li><code>AA</code> — a [[pocket pair]], two aces. No suit marker needed.</li>
+          <li><code>AKs</code> — ace and king of the <strong>same</strong> suit ([[suited]]). Flushes come from here.</li>
+          <li><code>AKo</code> — ace and king of <strong>different</strong> suits ([[offsuit]]). Same two ranks, meaningfully weaker.</li>
+        </ul>
+        <p>That is exactly how the matrix is laid out: [[pocket pair|pairs]] run down the diagonal, [[suited]] hands sit above it, [[offsuit]] hands below it. Suited versions are up and to the right of their offsuit twins, which is why the top-right corner is the strong corner.</p>
+
+        <h3>What the four colors mean</h3>
+        <ul>
+          <li><strong>R</strong> — strong enough to [[open|open-raise]] from <em>any</em> seat, including the worst one.</li>
+          <li><strong>O</strong> — playable once you reach middle position or later.</li>
+          <li><strong>Y</strong> — [[lp|late position]] only: the [[co|cutoff]], the [[button]], and sometimes the blinds.</li>
+          <li><strong>Fold (grey)</strong> — not worth opening from anywhere in this game. Most of the grid is grey, and that is correct. Folding most hands is the single biggest thing separating winning players from losing ones.</li>
+        </ul>
+
+        <h3>How much to raise</h3>
+        <p>When you do open, make it about <strong>2.5 to 3 big blinds</strong>. Add roughly one big blind for each [[limp|limper]] already in the pot. Raising a consistent amount regardless of your cards is what keeps your [[range]] hidden — a [[sizing tell]] gives observant opponents your hand for free. Full sizing guidance, preflop and after, is on the <strong>How to bet</strong> tab.</p>
+
+        <div class="callout">
+          <h3 style="margin-top:0">What this chart answers — and what it doesn't</h3>
+          <p><strong>It answers:</strong> nobody has raised yet, it is your turn, should you raise or fold? Pick your seat, find your hand. Colored means raise, grey means fold.</p>
+          <p><strong>It does not answer:</strong> what to do [[facing a raise]] (whether to [[3bet|3-bet]], call, or fold), what to do when you get [[3bet|3-bet]] after raising, how to adjust when players have already [[limp|limped]] in, or anything at all once the [[flop]] comes down.</p>
+          <p>One wrinkle worth knowing: the [[bb|big blind]]'s 38% is a [[defend]] range, not an opening range — it mixes calling and raising. Read it as "don't fold these," and raise only the top of it.</p>
+        </div>
+
+        <h3>The seats, in action order</h3>
+        <p>Click any seat on the chart to see its range. Preflop the action runs [[utg|UTG]] → [[utg1|UTG+1]] → [[lj|lojack]] → [[hj|hijack]] → [[co|cutoff]] → [[button]] → [[sb|small blind]] → [[bb|big blind]]. The blinds act <em>last</em> before the flop and <em>first</em> after it — a bad trade, and the reason you need a premium hand to voluntarily put money in from there.</p>
+
+      </div>
+    </section>
+  </div><!-- /view-basics -->
+
+  <div id="view-betting" role="tabpanel" aria-labelledby="tab-betting" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>How to bet</h2>
+      <p class="sub">What the actions are, how much to make it, and the three numbers that decide every close call.</p>
+
+      <div class="prose" data-terms>
+        <h3>Your five options, every turn</h3>
+        <ul>
+          <li><strong>[[check|Check]]</strong> — pass, keeping your cards. Only available if nobody has bet yet this round.</li>
+          <li><strong>[[bet|Bet]]</strong> — put chips in when nobody has yet.</li>
+          <li><strong>[[call|Call]]</strong> — match the current bet exactly.</li>
+          <li><strong>[[raise|Raise]]</strong> — increase it. The [[min-raise|minimum raise]] is the size of the last bet or raise, so if someone bets 5 you must make it at least 10.</li>
+          <li><strong>[[fold|Fold]]</strong> — give up the hand and anything you already put in.</li>
+        </ul>
+        <p>This is <strong>[[no-limit]]</strong> Hold'em, so the maximum is always everything in front of you — [[all-in]]. That is what makes sizing a real decision rather than a formality: you choose the price, and the price is the whole game.</p>
+
+        <h3>The one idea underneath all sizing</h3>
+        <p>Every bet you make is an offer of a price. Bet small and your opponent is being offered a bargain — they can continue with weak hands profitably. Bet big and the price is steep — they must fold more, but you risk more when you are wrong. So pick your size from <em>what you want to happen</em>:</p>
+        <ul>
+          <li><strong>[[value bet|Value]]</strong> — you expect to be called and to win. Size up to whatever they will still pay.</li>
+          <li><strong>[[bluff|Bluff]]</strong> — you expect to win only if they fold. Size to the cheapest amount that still folds out the hands you need gone.</li>
+          <li><strong>[[semi-bluff|Semi-bluff]]</strong> — you are likely behind now but have [[outs]]. Betting wins the pot immediately sometimes <em>and</em> improves later — the strongest reason to bet there is.</li>
+        </ul>
+        <p>Notice what is <em>not</em> on that list: "because I don't know what to do." If a bet is neither getting called by worse nor folding out better, [[check|checking]] is the answer.</p>
+
+        <h3>Preflop sizing</h3>
+        <p>Measured in [[bb|big blinds]], because the pot is still small and fixed.</p>
+      </div>
+
+      <div class="wrapscroll">
+        <table class="sizetable" data-terms>
+          <thead><tr><th>Spot</th><th>Size</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>[[open|Open]], nobody in yet</td><td>2.5–3bb</td><td>Enough that folding junk is correct for everyone behind, cheap enough that [[steal|stealing]] stays profitable when it fails.</td></tr>
+            <tr><td>Open with [[limp|limpers]]</td><td>3bb + 1bb each</td><td>Limpers left dead money and will call too wide. Charge them for it.</td></tr>
+            <tr><td>[[3bet|3-bet]], [[ip|in position]]</td><td>3× the open</td><td>Position does some of the work for you after the flop, so you need less to deny their [[equity]].</td></tr>
+            <tr><td>3-bet, [[oop|out of position]]</td><td>4× the open</td><td>Bigger, because you will be acting first all hand. Make them pay for the hands they continue with.</td></tr>
+            <tr><td>[[squeeze|Squeeze]] (open + callers)</td><td>4× + 1× per caller</td><td>Every caller is more dead money and one more player who might flop something. Price them out.</td></tr>
+            <tr><td>[[4bet|4-bet]]</td><td>2.2–2.5× the 3-bet</td><td>At 100bb this commits a serious chunk of your stack — which is the point. It should look like what it is.</td></tr>
+            <tr><td>Facing [[all-in|all-in]]</td><td>no sizing choice</td><td>Pure [[pot odds|pot-odds]] call-or-fold. Use the calculator below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="prose" data-terms>
+        <h3>Postflop sizing — always a share of the pot</h3>
+        <p>After the flop, forget big blinds and think in percent of the pot. The pot is what you are playing for, so it sets the scale.</p>
+      </div>
+
+      <div class="wrapscroll">
+        <table class="sizetable" data-terms>
+          <thead><tr><th>Size</th><th>Of pot</th><th>Use it when</th></tr></thead>
+          <tbody>
+            <tr><td>Small</td><td>25–33%</td><td>[[dry board|Dry, static boards]] where your whole range is ahead — a [[c-bet]] on K-7-2 rainbow. Cheap, and you can do it with almost everything.</td></tr>
+            <tr><td>Medium</td><td>50–66%</td><td>The default. Fine on most textures with a mixed range, and the size to use if you are unsure.</td></tr>
+            <tr><td>Large</td><td>75–100%</td><td>[[wet board|Wet, dynamic boards]] with flushes and straights available. Draws should pay, and you want the fold now rather than on a bad river.</td></tr>
+            <tr><td>[[overbet|Overbet]]</td><td>100%+</td><td>Only with a [[polarized]] range — nutted hands and bluffs, nothing in between — on cards that favor you and not them. Rare, and not a beginner move.</td></tr>
+            <tr><td>[[multiway|Multiway]]</td><td>one notch up</td><td>Three or more players: size up and bluff far less. Someone nearly always has a piece.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="calc">
+        <h3>Price calculator</h3>
+        <p class="sub">Set the pot and the bet. Everything below updates — both from the bettor's side and the caller's.</p>
+        <div class="calcrow">
+          <div class="field">
+            <label for="cPot">Pot before the bet</label>
+            <input class="num" id="cPot" type="number" min="0.5" step="0.5" value="10">
+          </div>
+          <div class="field wide">
+            <label for="cPct">Bet size — <span class="rangeval" id="cPctOut">66% of pot</span></label>
+            <input id="cPct" type="range" min="10" max="200" step="1" value="66">
+            <div class="presets">
+              <button class="btn" type="button" data-size="33">33%</button>
+              <button class="btn" type="button" data-size="50">50%</button>
+              <button class="btn" type="button" data-size="66">66%</button>
+              <button class="btn" type="button" data-size="100">100%</button>
+              <button class="btn" type="button" data-size="150">150%</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sizebar" id="cBar" role="img" aria-label="Bet size relative to the pot">
+          <div class="seg pot" id="cBarPot"></div>
+          <div class="seg bet" id="cBarBet"></div>
+        </div>
+
+        <div class="tiles">
+          <div class="tile"><span class="k">You bet</span><div class="v" id="oBet">6.6<small>bb</small></div><div class="d">into a pot of <span id="oPot">10</span>bb</div></div>
+          <div class="tile"><span class="k">Their price</span><div class="v" id="oOdds">2.5<small>-to-1</small></div><div class="d">they risk <span id="oRisk">6.6</span>bb to win <span id="oWin">16.6</span>bb</div></div>
+          <div class="tile"><span class="k">Equity they need</span><div class="v" id="oEq">28.5<small>%</small></div><div class="d">to break even calling — any less and folding is correct</div></div>
+          <div class="tile"><span class="k">Outs that equals</span><div class="v" id="oOuts">7<small> on flop</small></div><div class="d"><span id="oOutsTurn">14</span> outs if only the river is left</div></div>
+          <div class="tile"><span class="k">Your bluff needs</span><div class="v" id="oBe">39.8<small>% folds</small></div><div class="d">fold more often than this and the bluff prints money</div></div>
+          <div class="tile"><span class="k">They must defend</span><div class="v" id="oMdf">60.2<small>%</small></div><div class="d">of their range, or you could bet any two cards</div></div>
+        </div>
+      </div>
+
+      <div class="prose" data-terms>
+        <h3>The three numbers, in words</h3>
+        <ul>
+          <li><strong>[[pot odds|Pot odds]] / [[equity]] needed.</strong> You must win more often than your share of the final pot. Facing a half-pot bet you need about 25%; facing a pot-sized bet, 33%. This is the only honest answer to "should I call?"</li>
+          <li><strong>[[outs|Outs]] and the [[rule of 2 and 4]].</strong> Count the cards that make your hand. On the flop, multiply by 4 for a rough chance of getting there by the river; on the turn, multiply by 2. Nine flush outs on the flop ≈ 36% — enough to call a half-pot bet, not enough for a pot-sized one.</li>
+          <li><strong>Break-even [[bluff]] frequency.</strong> Your bet risks B to win the pot P, so it needs to work B/(P+B) of the time. A half-pot bluff needs folds one time in three; a pot-sized bluff, one time in two. Its mirror is [[mdf|minimum defense frequency]] — how much your opponent must continue with so you cannot profitably bet garbage.</li>
+        </ul>
+
+        <div class="callout">
+          <h3 style="margin-top:0">A worked hand</h3>
+          <p>Pot is 10bb on the turn. You have four cards to a flush and your opponent bets 5bb. You need 25% to call; nine flush outs with one card to come is about 18%. Calling loses money.</p>
+          <p>Now give yourself two [[overcard|overcards]] as well, so roughly 12 outs — about 24%. Still marginally short, <em>but</em> if you can win extra on the river when you hit, or take the pot away later, the call becomes fine. That extra is called implied odds, and it is why this is judgment rather than arithmetic.</p>
+        </div>
+
+        <h3>Mistakes that cost the most</h3>
+        <ul>
+          <li><strong>[[sizing tell|Sizing tells]].</strong> Betting big with strong hands and small with weak ones is readable within one session. Use the same size for your whole range in a given spot.</li>
+          <li><strong>Min-raising after the flop.</strong> It offers a wonderful price, folds nothing out, and builds a pot for the player with the better hand. Raise properly or don't raise.</li>
+          <li><strong>Betting a hand that cannot call a raise.</strong> If you would have to fold to a raise, often [[check|checking]] is better — you keep the pot small with a hand that wants a small pot.</li>
+          <li><strong>"I'm [[pot-committed|pot committed]]."</strong> Money already in the pot is not yours anymore. The only question is whether this call, at this price, wins often enough.</li>
+          <li><strong>Chasing without the odds.</strong> The calculator above takes about four seconds. Use it until the common prices are memorized.</li>
+        </ul>
+        <p>One honest caveat: every number here is the break-even point, not a decision. Break-even plus position, plus the chance they fold later, plus knowing the player — that is what makes it a call. The arithmetic just tells you how much the rest has to carry.</p>
+      </div>
+    </section>
+  </div><!-- /view-betting -->
+
+  <div id="view-holecards" role="tabpanel" aria-labelledby="tab-holecards" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>Starting hands, 1 to 169</h2>
+      <p class="sub" data-terms>Every possible pair of [[hole cards]] in order, strongest first. Click any row to pin that hand on the chart.</p>
+
+      <div class="hcbar">
+        <input class="search" id="hcSearch" type="search" placeholder="Filter — e.g. A, 77, suited, offsuit" aria-label="Filter starting hands">
+        <button class="btn" id="hcPlayable" type="button" aria-pressed="false">Playable only</button>
+        <button class="btn" id="hcCuts" type="button" aria-pressed="true">Show seat cutoffs</button>
+      </div>
+
+      <div class="hcwrap">
+        <table class="hclist" id="hcTable">
+          <thead><tr>
+            <th>#</th><th>Hand</th><th>Type</th><th>Tier</th>
+            <th>Combos</th><th>Chen</th><th>Top&nbsp;%</th><th>Earliest seat</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="hcEmpty" hidden>No hand matches that.</p>
+
+      <div class="prose" data-terms style="margin-top:20px">
+        <h3>How to read this list</h3>
+        <ul>
+          <li><strong>#</strong> is the rank out of 169 — <code>AA</code> at 1, <code>32o</code> at the bottom.</li>
+          <li><strong>Top %</strong> is how much of all 1,326 [[combos]] you have covered by that row. This is the column that ties the list to the table: UTG opens the top 11%, the [[button]] the top 44%. The blue cutoff lines mark exactly where each seat stops.</li>
+          <li><strong>Earliest seat</strong> is the first seat in the betting order that can [[open]] the hand. "—" means it is not an opening hand from anywhere.</li>
+          <li><strong>[[tier|Tier]]</strong> and <strong>[[chen|Chen]]</strong> are the two things that produced the order: tier first, Chen score to break the ties inside a tier.</li>
+        </ul>
+
+        <h3>Don't over-trust the exact number</h3>
+        <p>Hand 38 and hand 44 are not meaningfully different, and no two published charts agree on that part of the list. What is solid is the <em>grouping</em> — premium, strong, speculative, junk — and the broad shape: pairs and big suited cards at the top, offsuit junk at the bottom, [[suited]] always above its [[offsuit]] twin.</p>
+        <p>What also moves hands around is the thing a static list cannot show: <code>76s</code> is better than <code>K8o</code> in a pot with three callers and worse heads-up against a tight raiser. The list orders hands for the spot this tool is built for — opening an unopened pot — and nothing else.</p>
+
+        <h3>The ten you will remember anyway</h3>
+        <p id="hcTop10">—</p>
+        <p>Everything above about 15% is a hand you can play from any seat without thinking. The skill is in the next 30%, where position decides it — which is what the chart is for.</p>
+      </div>
+    </section>
+  </div><!-- /view-holecards -->
+
+  <div id="view-rankings" role="tabpanel" aria-labelledby="tab-rankings" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>Hand rankings</h2>
+      <p class="sub">Strongest first — these are the five-card hands that win pots at showdown. For the two cards you start with, see <strong>Starting hands</strong>.</p>
+      <table class="ranks" id="ranksTable">
+        <thead><tr><th class="n">#</th><th>Hand</th><th>Example</th><th>What it is</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="prose" data-terms style="margin-top:18px">
+        <h3>Things that trip people up</h3>
+        <ul>
+          <li><strong>Seven cards, best five.</strong> You are not stuck with your two — and you are not required to use them. If the board is the best five cards available, everyone still in has that same hand and the pot is split.</li>
+          <li><strong>Suits never break ties.</strong> No suit outranks another. Identical hands split the pot.</li>
+          <li><strong>[[kicker|Kickers]] decide close calls.</strong> Two players with one pair of kings: the higher next card wins. This is why <code>AKo</code> beats <code>KQo</code> far more often than it looks like it should.</li>
+          <li><strong>An ace plays both ends for straights.</strong> A-2-3-4-5 is a straight (the "wheel") and so is T-J-Q-K-A, but you cannot wrap around — Q-K-A-2-3 is nothing.</li>
+          <li><strong>A flush needs five of one suit</strong>, not four. This is why [[suited]] hands are better, not automatically good: you flop a flush about 1 time in 120.</li>
+        </ul>
+      </div>
+    </section>
+  </div><!-- /view-rankings -->
+
+  <div id="view-glossary" role="tabpanel" aria-labelledby="tab-glossary" hidden>
+    <section class="panel" style="max-width:1180px;margin:0 auto">
+      <h2>Glossary</h2>
+      <p class="sub">Every term this tool uses. Any underlined word elsewhere in the page links back here.</p>
+      <input class="search" id="gSearch" type="search" placeholder="Filter terms — e.g. blind, 3-bet, suited" aria-label="Filter glossary terms">
+      <div id="glossList" style="margin-top:14px"></div>
+      <p class="empty" id="gEmpty" hidden>No term matches that.</p>
+    </section>
+  </div><!-- /view-glossary -->
+
+  <footer class="page" data-terms>
+    Baseline chart for an unopened [[8-handed]] [[bb|100bb]] [[cash game]]: a teaching default, not [[gto|solver output]]. Ranges widen vs. passive tables and tighten vs. [[3bet|3-bet]]-happy opponents. Tier colors are one ordered hue (dark = strongest) with the R/O/Y letter in every cell, so tier never rests on color alone.
+  </footer>
+
+  <div class="tip" id="tip" role="status" aria-live="off"></div>
+  <div class="pop" id="pop" role="tooltip"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- glossary (single source for inline tooltips + the glossary tab) ----------
+  const GLOSSARY = [
+    { g: "Seats & position", items: [
+      ["button", "Button (BTN)", "The seat marked by the dealer puck. It acts last on every betting round after the flop, which makes it the most profitable seat at the table. The button moves one seat clockwise after each hand so the advantage rotates."],
+      ["sb", "Small blind (SB)", "The seat immediately left of the button. Posts a forced partial bet before any cards are dealt — usually half a big blind. Acts second-to-last preflop but first after the flop, which is the worst of both worlds."],
+      ["bb", "Big blind (BB) · bb", "Two meanings. The <em>seat</em> two to the left of the button, which posts the full forced bet and acts last preflop. Also the <em>unit of money</em>: one big blind. \"100bb\" means everyone has 100 big blinds in front of them — a standard stack depth."],
+      ["blinds", "Blinds", "The two forced bets posted before cards are dealt, by the small blind and big blind. They seed the pot so there is something to fight over; without them, correct play would be to fold every hand forever."],
+      ["utg", "UTG (under the gun)", "The first seat to act preflop, immediately left of the big blind. Named for the pressure: seven players still get to act behind you, so only hands that hold up under a re-raise belong here."],
+      ["utg1", "UTG+1", "The seat after under-the-gun. Second to act preflop, barely more room than UTG."],
+      ["lj", "Lojack (LJ)", "Three seats to the right of the button — the first seat where hands like suited connectors start to turn a profit, because fewer players can wake up behind you."],
+      ["hj", "Hijack (HJ)", "Two seats to the right of the button. Named for hijacking the steal attempt the cutoff and button were planning."],
+      ["co", "Cutoff (CO)", "The seat immediately right of the button. Named for cutting off the button's steal by raising first. The second-best seat at the table."],
+      ["ep", "Early position (EP)", "The first seats to act — UTG and UTG+1 here. Play tight: you are acting with the least information and the most players left behind you."],
+      ["mp", "Middle position (MP)", "The lojack and hijack. Moderate room to widen."],
+      ["lp", "Late position (LP)", "The cutoff and button — the last seats to act preflop. The widest ranges and most of the profit in poker live here."],
+      ["ip", "In position (IP)", "Acting after your opponent on every remaining betting round. You see what they do before you decide, every time."],
+      ["oop", "Out of position (OOP)", "Acting before your opponent. You have to commit to a decision with less information — the blinds are stuck here all hand."],
+      ["clockwise", "Clockwise", "The direction action moves: to the left of each player. Everything in poker — the deal, the betting, the button — moves this way."],
+      ["8-handed", "8-handed", "Eight players at the table, which is what this chart assumes. Fewer players (6-max) means fewer hands can beat you, so ranges widen; a full nine- or ten-handed table means they tighten."],
+      ["cash game", "Cash game", "Chips equal real money and you can leave any time, as opposed to a tournament where stacks shrink relative to rising blinds. This chart is built for cash games at 100 big blinds deep."]
+    ]},
+    { g: "Betting & actions", items: [
+      ["preflop", "Preflop", "The first betting round, after hole cards are dealt but before any shared cards appear. The only round this chart covers."],
+      ["flop", "Flop", "The first three shared cards, dealt face up at once, followed by a betting round."],
+      ["turn", "Turn", "The fourth shared card, followed by a betting round."],
+      ["river", "River", "The fifth and final shared card, followed by the last betting round."],
+      ["showdown", "Showdown", "Turning cards face up after the final betting round to see who wins. Only happens if two or more players are still in."],
+      ["bet", "Bet", "Putting chips in when nobody has yet on this round."],
+      ["call", "Call", "Matching the current bet to stay in the hand — no more, no less."],
+      ["raise", "Raise", "Increasing the current bet, forcing everyone else to pay more or fold."],
+      ["fold", "Fold", "Giving up your cards and any money already in the pot. The right answer with most hands, from most seats, most of the time."],
+      ["check", "Check", "Passing the action without betting, only possible when nobody has bet on this round yet."],
+      ["open", "Open · open-raise", "Making the first raise of the hand. \"Can I open this?\" is the exact question this chart answers. An opening range is the set of hands worth raising with when nobody has raised ahead of you."],
+      ["limp", "Limp · limper", "Just calling the big blind preflop instead of raising or folding. Passive and generally a losing play, since it invites several opponents in cheaply. This chart assumes nobody has limped; add about one big blind to your raise size for each limper already in."],
+      ["3bet", "3-bet", "The re-raise after someone opens. The counting treats the big blind as bet one, the open as bet two, so the re-raise is bet three. A 3-bet is a strong action — the hands you can open from the cutoff are often folds against one."],
+      ["4bet", "4-bet", "The re-raise of a 3-bet. At 100bb this almost always means a very strong hand or a deliberate bluff."],
+      ["facing a raise", "Facing a raise", "Someone has already raised before your turn. A completely different decision from opening — and one this chart does not cover. Many hands that are fine to open become folds here, especially offsuit ones."],
+      ["steal", "Steal", "Raising from a late seat mainly to win the blinds uncontested rather than because your cards are strong. The cheapest reliable profit in poker and the reason button ranges are so wide."],
+      ["isolate", "Isolate", "Raising big enough to get heads-up with one weak opponent instead of playing a multiway pot."],
+      ["defend", "Defend", "Calling or raising from the big blind rather than folding. You already have money in the pot and you close the action, so you can continue with far more hands than you would open — but you will be out of position for the rest of the hand."],
+      ["barrel", "Barrel", "To keep betting on later streets after your flop [[c-bet]]. A second barrel is a turn bet, a third is a river bet — each one needs a reason, not just momentum."],
+      ["heads-up", "Heads-up", "Two players in the hand. Much easier to play well than a multiway pot, which is part of why raising beats limping."],
+      ["multiway", "Multiway", "Three or more players in the hand. Marginal hands lose value, and hands that make big made hands — pairs and suited cards — gain it."]
+    ]},
+    { g: "Bet sizing & math", items: [
+      ["no-limit", "No-limit", "The betting format this tool assumes: you may bet anything from the minimum up to your entire stack at any point. Sizing is therefore a decision on every single turn, which is most of the skill in the game."],
+      ["all-in", "All-in", "Betting every chip you have. If you are called and lose, the hand is over for you. Nobody can bet you off a hand once you are all-in — there are no more decisions to make."],
+      ["min-raise", "Minimum raise", "The smallest legal raise: you must increase the bet by at least the amount of the last bet or raise. If someone bets 5, the least you can make it is 10. Legal, and after the flop almost always a mistake."],
+      ["value bet", "Value bet", "Betting a hand you expect to be <em>called by worse</em>. The size should be the most your opponent will still pay — most money won in poker is won this way, not by bluffing."],
+      ["bluff", "Bluff", "Betting a hand that only wins if your opponent folds. Needs to work <em>bet ÷ (pot + bet)</em> of the time to break even — a half-pot bluff needs a fold one time in three."],
+      ["semi-bluff", "Semi-bluff", "Betting a hand that is probably behind but has [[outs]] — a flush draw, say. It wins immediately when they fold and still has a hand to make when they don't, which makes it far stronger than a pure bluff."],
+      ["c-bet", "Continuation bet (c-bet)", "A bet on the flop by whoever raised preflop. You claimed the strongest range before the flop, so you get to keep representing it — the most common bet in Hold'em."],
+      ["overbet", "Overbet", "A bet larger than the pot. Only correct with a [[polarized]] range on a board that favors you, because it offers your opponent a terrible price and so folds out everything medium."],
+      ["polarized", "Polarized", "A range of only very strong hands and bluffs, with nothing in the middle. Big bets make sense with a polarized range and little sense without one."],
+      ["dry board", "Dry / static board", "A flop with few draws available — K-7-2 with mixed suits. Hands rarely change value from street to street, so small, frequent bets work."],
+      ["wet board", "Wet / dynamic board", "A flop full of possible draws — 9-8-7 of two suits. Hands change value fast, so bets get bigger: you are charging draws and protecting what you have."],
+      ["equity", "Equity", "Your share of the pot: how often you win it if the hand plays to the end from here. Compare it to the price you are being offered to know whether a call makes money."],
+      ["outs", "Outs", "Cards still in the deck that make your hand. Four to a flush means nine outs; an open-ended straight draw means eight. Count them, then use the [[rule of 2 and 4]]."],
+      ["rule of 2 and 4", "Rule of 2 and 4", "Fast [[equity]] estimate. On the flop, multiply your [[outs]] by 4 for your rough chance of getting there by the river. On the turn, multiply by 2. Nine outs on the flop ≈ 36%; on the turn ≈ 18%."],
+      ["pot odds", "Pot odds", "The price you are offered: the pot versus the cost of calling. If calling 5 can win 20, you are getting 4-to-1 and need to win more than one time in five. Compare to your [[equity]] — that comparison <em>is</em> the decision."],
+      ["mdf", "Minimum defense frequency (MDF)", "How much of your range you must continue with so your opponent cannot profit by betting anything. Equals <em>pot ÷ (pot + bet)</em> — about 67% against a half-pot bet. The mirror image of their [[bluff]] break-even."],
+      ["pot-committed", "Pot committed", "Having so much in already that folding is mathematically wrong. Real, but much rarer than people claim: chips in the pot are not yours, and the only question is whether <em>this</em> call wins often enough."],
+      ["squeeze", "Squeeze", "[[3bet|3-betting]] after someone opened and one or more players called. The callers' dead money makes it profitable, and their weak calling ranges fold a lot — so size it up."],
+      ["sizing tell", "Sizing tell", "Varying your bet size with your hand strength, which lets observant opponents read you for free. Fix it by using one size for your entire range in a given spot."],
+      ["spr", "Stack-to-pot ratio (SPR)", "Your remaining stack divided by the pot. Low SPR means commitment decisions come fast and top pair is usually good enough; high SPR means more room to be outplayed, favoring hands that make big hands."],
+      ["overcard", "Overcard", "A card higher than the ones on the board, or higher than your opponent's likely pair. Two overcards give you roughly six extra [[outs]], though they are not clean ones."]
+    ]},
+    { g: "Cards & hands", items: [
+      ["hole cards", "Hole cards", "Your two private cards. Also called your \"hand\" preflop, though your final hand is the best five of the seven available to you."],
+      ["board", "Board · community cards", "The five shared face-up cards — flop, turn and river — that every player combines with their hole cards."],
+      ["rank", "Rank", "The value of a card: ace down to two. Suits have no value in poker; ranks are everything."],
+      ["suited", "Suited (s)", "Your two cards share a suit, so a flush is possible. Written with a lowercase s — <code>AKs</code>. Worth a few percent, which is enough to move a hand a whole tier."],
+      ["offsuit", "Offsuit (o)", "Your two cards are different suits. Written with a lowercase o — <code>AKo</code>. Same ranks as the suited version but meaningfully weaker, which is why the chart's lower-left half is mostly grey."],
+      ["pocket pair", "Pocket pair", "Both hole cards the same rank, like <code>AA</code> or <code>77</code>. They sit on the matrix diagonal. Even the smallest pair already has a made hand, which is why 22 is playable from the button while A4o is not."],
+      ["broadway", "Broadway", "Two cards ten or higher — the top-left corner of the matrix. These make the strongest pairs and the straights that beat other straights."],
+      ["suited connector", "Suited connector", "Two touching ranks of the same suit, like <code>76s</code> or <code>JTs</code>. Weak on their own but they make flushes and straights, so they win big pots when they hit. They need position and several opponents to be worth playing."],
+      ["gapper", "Suited gapper", "Same idea as a connector with a hole in it — <code>T8s</code>, <code>97s</code>. Slightly worse, since one fewer straight is available."],
+      ["kicker", "Kicker", "Your side card, used to break ties between equal hands. Two players both pairing an ace: the higher second card takes it. Weak kickers are how hands like <code>A4o</code> lose money."],
+      ["set mining", "Set mining", "Playing a small pair cheaply, hoping to flop three of a kind — which happens about one time in eight. Needs enough money behind to win when it hits."],
+      ["combos", "Combos", "The number of distinct two-card combinations that make a hand. A pocket pair has 6, a suited hand 4, an offsuit hand 12 — 1,326 in total. The chart measures ranges in combos, not hand names, because 169 names are not equally likely: <code>AKo</code> is dealt three times as often as <code>AKs</code>."]
+    ]},
+    { g: "Chart & strategy terms", items: [
+      ["range", "Range", "The full set of hands you would play in a given spot, rather than one specific hand. Thinking in ranges is the core skill of the game — it is what the colored blocks in the matrix are."],
+      ["tier", "Tier (R / O / Y)", "This chart's grouping of hands by the earliest seat they can be opened from. <strong>R</strong> raise from any seat, <strong>O</strong> open from middle position onward, <strong>Y</strong> late position only, grey fold everywhere."],
+      ["pct", "% of hands", "How much of all 1,326 possible starting combinations a range contains. 11% is tight, 44% is wide. Shown for each seat so you can see the ranges widen as position improves."],
+      ["chen", "Chen score", "A simple hand-strength formula published by Bill Chen that scores high cards, pairs, suitedness and connectedness. This tool uses it to order hands within a tier so range cutoffs land in a sensible place. A rule of thumb, not a solver."],
+      ["gto", "GTO · solver", "Game-theory-optimal play, approximated by software called solvers. Real solver output is more granular than any chart — it mixes actions for the same hand. This chart is a teaching simplification of that output, not a substitute for it."],
+      ["tight", "Tight / loose", "Tight means playing few hands, loose means playing many. Beginners lose mostly by being too loose, especially from early seats."],
+      ["position", "Position", "Where you sit relative to the button, and so how late you act. The single most important factor in whether a starting hand is worth playing — the same two cards can be a clear raise from the button and a clear fold from under the gun."]
+    ]}
+  ];
+
+  const TERMS = {};
+  GLOSSARY.forEach(sec => sec.items.forEach(it => TERMS[it[0]] = { title: it[1], def: it[2], group: sec.g }));
+
+  const RANKINGS = [
+    ["Royal flush", "A|s K|s Q|s J|s T|s", "Ten through ace, all one suit. The best possible hand — you will see it roughly once every 30,000 hands."],
+    ["Straight flush", "9|h 8|h 7|h 6|h 5|h", "Five cards in a row, all one suit."],
+    ["Four of a kind", "7|c 7|d 7|h 7|s 2|d", "All four cards of one rank. Also called quads."],
+    ["Full house", "K|c K|d K|h 4|s 4|d", "Three of one rank plus a pair. Also called a boat."],
+    ["Flush", "A|d J|d 8|d 5|d 3|d", "Five cards of the same suit, in any order. Highest card decides between two flushes."],
+    ["Straight", "Q|c J|d T|h 9|s 8|d", "Five consecutive ranks, suits irrelevant. An ace can sit at either end but cannot wrap around."],
+    ["Three of a kind", "5|c 5|d 5|h K|s 2|d", "Three cards of one rank. Called a set when two come from your hole cards, trips when two come from the board."],
+    ["Two pair", "A|c A|d 9|h 9|s 4|d", "Two different pairs. Very often the winning hand in a real pot."],
+    ["One pair", "J|c J|d A|h 7|s 3|d", "Two cards of the same rank. Wins more pots than everything above it combined."],
+    ["High card", "A|c Q|d 9|h 6|s 3|d", "No pair, no straight, no flush — just your highest card. Also what you have when you miss, which is most of the time."]
+  ];
+
+  const RANKS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"];
+  const RV = { A:14, K:13, Q:12, J:11, T:10, "9":9, "8":8, "7":7, "6":6, "5":5, "4":4, "3":3, "2":2 };
+
+  // Tier grid. Row = higher card, column = lower card.
+  // Above the diagonal = suited, below = offsuit, diagonal = pair.
+  const TIER_ROWS = [
+    "RRRRROOOOOYYY", // A
+    "RRRRROYYYYFFF", // K
+    "RORRROYFFFFFF", // Q
+    "ROORROYYFFFFF", // J
+    "OOOOROYYFFFFF", // T
+    "YYYYOROYYFFFF", // 9
+    "YYFFYYROYYFFF", // 8
+    "YFFFFYYROYFFF", // 7
+    "YFFFFFFYROYFF", // 6
+    "YFFFFFFFYROYF", // 5
+    "YFFFFFFFFYRYF", // 4
+    "YFFFFFFFFFFRY", // 3
+    "YFFFFFFFFFFFR"  // 2
+  ];
+
+  const TIER_LABEL = { R: "Raise — any position", O: "Open — middle & later", Y: "Late position only", F: "Fold" };
+  const TIER_ORDER = { R: 0, O: 1, Y: 2, F: 3 };
+
+  // 8-handed seats, clockwise from the button. pct = share of all 1326 combos opened.
+  const POSITIONS = [
+    { id:"BTN", name:"BUTTON",      abbr:"BTN", order:6, group:"LP", pct:44, angle:-90,
+      note:"Last to act on every street and the cheapest seat to [[steal]] from. [[open|Open]] wide, [[isolate]] the [[blinds]], and keep the betting lead after the [[flop]]." },
+    { id:"SB",  name:"SMALL BLIND", abbr:"SB",  order:7, group:"BL", pct:24, angle:-45,
+      note:"Half a bet in, but [[oop|out of position]] against everyone. [[raise|Raise]] or [[fold]] — [[call|calling]] here invites the [[bb|big blind]] along with a positional edge over you." },
+    { id:"BB",  name:"BIG BLIND",   abbr:"BB",  order:8, group:"BL", pct:38, angle:0,
+      note:"Closes [[preflop]] action with a discount, so [[defend]] wider than you would [[open]] — then play carefully, since you are first to act after the [[flop]]. This range mixes calling and raising: read it as hands not to fold, and raise only the top of it." },
+    { id:"UTG", name:"UTG",         abbr:"UTG (Pos 1)", order:1, group:"EP", pct:11, angle:45,
+      note:"Seven players still to act behind you. Only hands that stand up to a [[3bet|3-bet]] and play well [[multiway]] belong here." },
+    { id:"UTG1",name:"UTG + 1",     abbr:"UTG+1 (Pos 2)", order:2, group:"EP", pct:13, angle:90,
+      note:"Barely more room than [[utg|UTG]]. Add the strongest [[suited]] [[broadway|broadways]] and middle [[pocket pair|pairs]]; leave the [[gapper|suited gappers]] for later seats." },
+    { id:"LJ",  name:"LOJACK",      abbr:"LOJACK", order:3, group:"MP", pct:16, angle:135,
+      note:"First seat where [[suited connector|suited connectors]] and the weaker [[broadway|broadways]] start to show a profit, because fewer hands can wake up behind you." },
+    { id:"HJ",  name:"HIJACK",      abbr:"HIJACK", order:4, group:"MP", pct:20, angle:180,
+      note:"Three seats left to act. [[open|Open]] any [[pocket pair|pair]], [[suited]] ace, or [[suited connector]] you would be happy to [[barrel]] a [[flop]] with." },
+    { id:"CO",  name:"CUTOFF",      abbr:"CUTOFF", order:5, group:"LP", pct:27, angle:-135,
+      note:"[[steal|Steal]] seat number two. [[open|Open]] wide — if the [[button]] folds you inherit [[ip|position]] for the rest of the hand." }
+  ];
+  const BY_ID = {}; POSITIONS.forEach(p => BY_ID[p.id] = p);
+  const ORDERED = POSITIONS.slice().sort((a,b) => a.order - b.order);
+
+  // ---------- hand model ----------
+  function chen(hi, lo, kind) {
+    const pts = { A:10, K:8, Q:7, J:6, T:5, "9":4.5, "8":4, "7":3.5, "6":3, "5":2.5, "4":2, "3":1.5, "2":1 };
+    if (kind === "pair") return Math.ceil(Math.max(pts[hi] * 2, 5));
+    let v = pts[hi];
+    if (kind === "suited") v += 2;
+    const gap = RV[hi] - RV[lo] - 1;
+    v -= gap === 0 ? 0 : gap === 1 ? 1 : gap === 2 ? 2 : gap === 3 ? 4 : 5;
+    if (gap <= 1 && RV[hi] < 12) v += 1;
+    return Math.ceil(v);
+  }
+
+  const HANDS = [];
+  for (let r = 0; r < 13; r++) {
+    for (let c = 0; c < 13; c++) {
+      const kind = r === c ? "pair" : (c > r ? "suited" : "offsuit");
+      const hi = RANKS[Math.min(r, c)], lo = RANKS[Math.max(r, c)];
+      const label = kind === "pair" ? hi + hi : hi + lo + (kind === "suited" ? "s" : "o");
+      HANDS.push({
+        row: r, col: c, kind: kind, hi: hi, lo: lo, label: label,
+        tier: TIER_ROWS[r][c],
+        combos: kind === "pair" ? 6 : kind === "suited" ? 4 : 12,
+        score: chen(hi, lo, kind)
+      });
+    }
+  }
+  const TOTAL_COMBOS = 1326;
+
+  // Rank all 169 starting hands: tier first, then Chen score, then high card.
+  // Fold-tier hands sort last, so the playable list is a prefix of the full one.
+  const cmp = (a, b) =>
+    TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.score - a.score || RV[b.hi] - RV[a.hi] || RV[b.lo] - RV[a.lo];
+  const FULL_RANK = HANDS.slice().sort(cmp);
+  const RANKED = FULL_RANK.filter(h => h.tier !== "F");
+
+  // Running totals, so every hand knows its rank and the range size it completes.
+  let run = 0;
+  FULL_RANK.forEach((h, i) => {
+    h.rank = i + 1;
+    run += h.combos;
+    h.cumCombos = run;
+    h.cumPct = run / TOTAL_COMBOS * 100;
+  });
+
+  // Per-position range = the top N hands of that one ranking, stopping at the combo budget.
+  POSITIONS.forEach(p => {
+    const budget = TOTAL_COMBOS * p.pct / 100;
+    const set = new Set(); let combos = 0, cut = 0;
+    for (const h of RANKED) {
+      if (combos + h.combos > budget) break;
+      set.add(h.label); combos += h.combos; cut = h.rank;
+    }
+    p.range = set;
+    p.combos = combos;
+    p.actualPct = combos / TOTAL_COMBOS * 100;
+    p.hands = set.size;
+    p.cutRank = cut;           // last hand in this seat's range
+  });
+
+  const openedFrom = h => ORDERED.filter(p => p.range.has(h.label));
+
+  // ---------- geometry ----------
+  const VW = 600, VH = 470, CX = 300, CY = 230, RX = 180, RY = 108, RAILX = 162, RAILY = 96;
+  const seatPt = a => {
+    const t = a * Math.PI / 180;
+    return { x: CX + RX * 1.28 * Math.cos(t), y: CY + RY * 1.62 * Math.sin(t) };
+  };
+  const puckPt = a => {
+    const t = a * Math.PI / 180;
+    return { x: CX + RAILX * 0.86 * Math.cos(t), y: CY + RAILY * 0.86 * Math.sin(t) };
+  };
+
+  // ---------- DOM ----------
+  const root = document.getElementById("root");
+  const wrap = document.getElementById("tableWrap");
+  const matrix = document.getElementById("matrix");
+  const tip = document.getElementById("tip");
+
+  let selectedPos = null;   // position id or null
+  let pinnedHand = null;    // hand label or null
+  let focusIdx = 0;         // roving tabindex in the matrix
+
+  // seats
+  POSITIONS.forEach(p => {
+    const pt = seatPt(p.angle);
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "seat"; b.dataset.pos = p.id;
+    b.setAttribute("aria-pressed", "false");
+    b.style.left = (pt.x / VW * 100) + "%";
+    b.style.top = (pt.y / VH * 100) + "%";
+    b.innerHTML = '<span class="nm">' + p.abbr + '</span><span class="meta">acts ' + p.order + ' of 8 · ' + p.pct + '%</span>';
+    b.addEventListener("click", () => selectPos(selectedPos === p.id ? null : p.id));
+    wrap.appendChild(b);
+  });
+  const puck = document.createElement("div");
+  puck.className = "puck"; puck.textContent = "D";
+  const pp = puckPt(BY_ID.BTN.angle);
+  puck.style.left = (pp.x / VW * 100) + "%";
+  puck.style.top = (pp.y / VH * 100) + "%";
+  wrap.appendChild(puck);
+
+  // clockwise flow arc (UTG -> ... -> BB), drawn inside the rail
+  (function () {
+    const arc = document.getElementById("flowArc");
+    const pr = 0.84, pts = [];
+    for (let a = 40; a <= 352; a += 6) {
+      const t = a * Math.PI / 180;
+      pts.push([CX + RAILX * pr * Math.cos(t), CY + RAILY * pr * Math.sin(t)]);
+    }
+    arc.setAttribute("d", pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" "));
+  })();
+
+  // matrix header row
+  matrix.appendChild(cellDiv("mh", ""));
+  RANKS.forEach(r => matrix.appendChild(cellDiv("mh", r)));
+  HANDS.forEach((h, i) => {
+    if (h.col === 0) matrix.appendChild(cellDiv("mh", RANKS[h.row]));
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "cell"; b.dataset.i = i;
+    b.setAttribute("role", "gridcell");
+    b.tabIndex = -1;
+    b.innerHTML = '<span class="tag"></span><span class="lbl">' + h.label + '</span>';
+    b.addEventListener("mouseenter", e => { showTip(h, e); });
+    b.addEventListener("mousemove", e => moveTip(e));
+    b.addEventListener("mouseleave", hideTip);
+    b.addEventListener("focus", () => { focusIdx = i; renderHand(h); });
+    b.addEventListener("click", () => { pinnedHand = pinnedHand === h.label ? null : h.label; focusIdx = i; render(); });
+    matrix.appendChild(b);
+    h.el = b;
+  });
+  matrix.addEventListener("keydown", onGridKey);
+
+  function cellDiv(cls, txt) { const d = document.createElement("div"); d.className = cls; d.textContent = txt; return d; }
+
+  function onGridKey(e) {
+    const map = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 13, ArrowUp: -13 };
+    if (e.key === "Home") { focusIdx = 0; }
+    else if (e.key === "End") { focusIdx = 168; }
+    else if (map[e.key] !== undefined) {
+      const r = Math.floor(focusIdx / 13), c = focusIdx % 13;
+      if (Math.abs(map[e.key]) === 1 && (c + map[e.key] < 0 || c + map[e.key] > 12)) return;
+      if (Math.abs(map[e.key]) === 13 && (r + map[e.key] / 13 < 0 || r + map[e.key] / 13 > 12)) return;
+      focusIdx += map[e.key];
+    } else return;
+    e.preventDefault();
+    HANDS[focusIdx].el.focus();
+    updateRoving();
+  }
+  function updateRoving() { HANDS.forEach((h, i) => h.el.tabIndex = i === focusIdx ? 0 : -1); }
+
+  // ---------- selection ----------
+  function selectPos(id) {
+    selectedPos = id;
+    if (id) stopAnim();
+    try { history.replaceState(null, "", id ? "#" + id : location.pathname + location.search); } catch (e) { /* file:// */ }
+    render();
+  }
+
+  function render() {
+    const p = selectedPos ? BY_ID[selectedPos] : null;
+
+    document.querySelectorAll(".seat").forEach(s =>
+      s.setAttribute("aria-pressed", String(s.dataset.pos === selectedPos)));
+    document.getElementById("viewAll").classList.toggle("active", !selectedPos);
+
+    HANDS.forEach(h => {
+      const inRange = !p || p.range.has(h.label);
+      const tier = p ? (inRange ? h.tier : "F") : h.tier;
+      h.el.dataset.t = tier;
+      h.el.classList.toggle("dim", !!p && !inRange);
+      h.el.classList.toggle("pinned", h.label === pinnedHand);
+      h.el.querySelector(".tag").textContent = tier === "F" ? "" : tier;
+      h.el.setAttribute("aria-label", h.label + ", " + (p
+        ? (inRange ? "open from " + p.name + ", tier " + h.tier : "fold from " + p.name)
+        : TIER_LABEL[h.tier]));
+    });
+
+    document.getElementById("mxSub").textContent = p
+      ? "Open-raising range from " + p.name + " — folded hands are greyed out."
+      : "All 169 starting hands by tier. Suited hands above the diagonal, offsuit below, pairs on it.";
+
+    renderPos(p);
+    renderHand(pinnedHand ? HANDS.find(h => h.label === pinnedHand) : null);
+    renderTableView(p);
+    updateRoving();
+  }
+
+  function renderPos(p) {
+    const sub = document.getElementById("posSub"), hero = document.getElementById("posHero");
+    const kv = document.getElementById("posKv"), note = document.getElementById("posNote");
+    if (!p) {
+      sub.textContent = "No seat selected";
+      hero.innerHTML = 'All tiers <small>169 hands</small>';
+      kv.innerHTML = rows([
+        ["Raise (R)", countTier("R")], ["Open (O)", countTier("O")],
+        ["Late only (Y)", countTier("Y")], ["Fold", countTier("F")]
+      ]);
+      note.innerHTML = markTerms("Select a seat on the table to filter the matrix to that position's [[open|opening range]]. Grey means fold; every colored hand is one you would [[raise|raise]] with if nobody has raised ahead of you.");
+      return;
+    }
+    sub.textContent = p.group === "BL" ? "Blind — acts first postflop" :
+      p.group === "EP" ? "Early position" : p.group === "MP" ? "Middle position" : "Late position";
+    hero.innerHTML = p.actualPct.toFixed(1) + '% <small>of all hands ' + (p.id === "BB" ? "defended" : "opened") + '</small>';
+    kv.innerHTML = markTerms(rows([
+      ["Seat", p.name],
+      ["[[preflop|Preflop]] order", p.order + " of 8"],
+      ["Players behind", (8 - p.order)],
+      ["Hand types", p.hands + " of 169"],
+      ["[[combos|Combos]]", p.combos + " of 1326"]
+    ]));
+    note.innerHTML = markTerms(p.note);
+  }
+
+  function countTier(t) { return HANDS.filter(h => h.tier === t).length + " hands"; }
+  function rows(pairs) { return pairs.map(x => "<dt>" + x[0] + "</dt><dd>" + x[1] + "</dd>").join(""); }
+
+  function renderHand(h) {
+    const sub = document.getElementById("handSub"), hero = document.getElementById("handHero");
+    const kv = document.getElementById("handKv"), note = document.getElementById("handNote");
+    const chips = document.getElementById("handChips");
+    if (!h) {
+      sub.textContent = "No hand selected";
+      hero.textContent = "—";
+      kv.innerHTML = ""; chips.innerHTML = "";
+      note.textContent = "Hover or click a cell in the matrix. Arrow keys move, Enter pins a hand.";
+      return;
+    }
+    const from = openedFrom(h);
+    sub.textContent = h.kind === "pair" ? "Pocket pair" : h.kind === "suited" ? "Suited" : "Offsuit";
+    hero.innerHTML = h.label + ' <small>' + TIER_LABEL[h.tier] + '</small>';
+    kv.innerHTML = markTerms(rows([
+      ["Rank", h.rank + " of 169 (top " + h.cumPct.toFixed(1) + "%)"],
+      ["[[tier|Tier]]", h.tier === "F" ? "Fold" : h.tier],
+      ["[[combos|Combos]]", h.combos + " of 1326 (" + (h.combos / TOTAL_COMBOS * 100).toFixed(1) + "%)"],
+      ["[[chen|Chen score]]", h.score],
+      ["[[open|Opened]] from", from.length ? from.length + " of 8 seats" : "no seat"]
+    ]));
+    note.textContent = from.length
+      ? "Earliest seat that opens it: " + from[0].name + "."
+      : "Not in any opening range here — fold it and wait for a better spot.";
+    chips.innerHTML = ORDERED.map(p =>
+      '<span class="chip' + (p.range.has(h.label) ? " on" : "") + '">' + p.abbr.replace(/ \(.*\)/, "") + "</span>").join("");
+  }
+
+  // ---------- tooltip ----------
+  function showTip(h, e) {
+    const p = selectedPos ? BY_ID[selectedPos] : null;
+    const inRange = !p || p.range.has(h.label);
+    const from = openedFrom(h);
+    tip.innerHTML = "<b>" + h.label + "</b> <span class='t2'>#" + h.rank + "/169</span><br><span class='t2'>" +
+      (p ? (inRange ? "Open from " + p.name : "Fold from " + p.name) : TIER_LABEL[h.tier]) +
+      "<br>" + h.combos + " combos · " + (from.length ? from.length + "/8 seats open it" : "never opened") +
+      "</span>";
+    tip.classList.add("show");
+    moveTip(e);
+    renderHand(h);
+  }
+  function moveTip(e) {
+    const pad = 14, w = tip.offsetWidth, ht = tip.offsetHeight;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + w > innerWidth - 8) x = e.clientX - w - pad;
+    if (y + ht > innerHeight - 8) y = e.clientY - ht - pad;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  function hideTip() {
+    tip.classList.remove("show");
+    renderHand(pinnedHand ? HANDS.find(h => h.label === pinnedHand) : null);
+  }
+
+  // ---------- table view ----------
+  function renderTableView(p) {
+    const body = document.querySelector("#tvTable tbody");
+    const list = (p ? HANDS.filter(h => p.range.has(h.label)) : HANDS.filter(h => h.tier !== "F"))
+      .slice().sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.score - a.score);
+    document.getElementById("tvCap").textContent = p
+      ? p.name + " opening range — " + list.length + " hand types, " + p.combos + " combos (" + p.actualPct.toFixed(1) + "%)"
+      : "All playable hands — " + list.length + " hand types across tiers R, O and Y";
+    document.getElementById("tvSub").textContent = "Same data as the matrix, without relying on color.";
+    body.innerHTML = list.map(h =>
+      "<tr><td>" + h.label + "</td><td>" + h.kind + "</td><td>" + h.tier + "</td><td>" + h.combos +
+      "</td><td>" + (openedFrom(h).map(x => x.id).join(", ") || "—") + "</td></tr>").join("");
+  }
+
+  // ---------- glossary terms: inline markup, popover, tab ----------
+  // [[key]] or [[key|display text]] becomes a focusable term button.
+  function markTerms(html) {
+    return html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, key, disp) => {
+      const k = key.trim().toLowerCase(), t = TERMS[k];
+      if (!t) return disp || key;
+      return '<button type="button" class="term" data-term="' + k + '">' + (disp || key) + "</button>";
+    });
+  }
+  document.querySelectorAll("[data-terms]").forEach(el => { el.innerHTML = markTerms(el.innerHTML); });
+
+  const pop = document.getElementById("pop");
+  let popFor = null;
+  function showPop(el) {
+    const t = TERMS[el.dataset.term];
+    if (!t) return;
+    popFor = el;
+    pop.innerHTML = "<h4>" + t.title + "</h4>" + t.def + '<div class="hint">Click for the full glossary</div>';
+    pop.classList.add("show");
+    const r = el.getBoundingClientRect();
+    let x = r.left, y = r.bottom + 8;
+    if (x + pop.offsetWidth > innerWidth - 10) x = innerWidth - pop.offsetWidth - 10;
+    if (y + pop.offsetHeight > innerHeight - 10) y = r.top - pop.offsetHeight - 8;
+    pop.style.left = Math.max(10, x) + "px";
+    pop.style.top = Math.max(10, y) + "px";
+  }
+  function hidePop() { pop.classList.remove("show"); popFor = null; }
+  document.addEventListener("mouseover", e => {
+    const t = e.target.closest(".term");
+    if (t) showPop(t); else if (popFor && !pop.contains(e.target)) hidePop();
+  });
+  document.addEventListener("focusin", e => {
+    const t = e.target.closest(".term");
+    if (t) showPop(t); else hidePop();
+  });
+  document.addEventListener("click", e => {
+    const t = e.target.closest(".term");
+    if (!t) return;
+    hidePop();
+    openGlossary(t.dataset.term);
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") hidePop(); });
+  addEventListener("scroll", () => { if (popFor) showPop(popFor); }, { passive: true });
+
+  // glossary panel
+  const gWrap = document.getElementById("glossList"), gSearch = document.getElementById("gSearch"), gEmpty = document.getElementById("gEmpty");
+  gWrap.innerHTML = GLOSSARY.map(sec =>
+    '<div class="gsec"><h3>' + sec.g + "</h3><div class=\"glossgrid\">" +
+    sec.items.map(it => '<div class="gcard" id="g-' + it[0] + '" data-k="' + it[0] + " " + it[1].toLowerCase() + '"><h4>' + it[1] + "</h4><p>" + it[2] + "</p></div>").join("") +
+    "</div></div>").join("");
+
+  gSearch.addEventListener("input", () => {
+    const q = gSearch.value.trim().toLowerCase();
+    let shown = 0;
+    gWrap.querySelectorAll(".gcard").forEach(c => {
+      const hit = !q || c.dataset.k.includes(q) || c.textContent.toLowerCase().includes(q);
+      c.hidden = !hit; if (hit) shown++;
+    });
+    gWrap.querySelectorAll(".gsec").forEach(s =>
+      s.hidden = !s.querySelector(".gcard:not([hidden])"));
+    gEmpty.hidden = shown > 0;
+  });
+
+  function openGlossary(key) {
+    showTab("glossary");
+    gSearch.value = "";
+    gSearch.dispatchEvent(new Event("input"));
+    const card = document.getElementById("g-" + key);
+    if (!card) return;
+    gWrap.querySelectorAll(".gcard.hit").forEach(c => c.classList.remove("hit"));
+    card.classList.add("hit");
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => card.classList.remove("hit"), 2600);
+  }
+
+  // ---------- hand rankings ----------
+  (function () {
+    const SUIT = { s: ["♠", ""], c: ["♣", ""], h: ["♥", "red"], d: ["♦", "red"] };
+    document.querySelector("#ranksTable tbody").innerHTML = RANKINGS.map((r, i) =>
+      "<tr><td class='n'>" + (i + 1) + "</td><td class='nm'>" + r[0] + "</td><td class='ex'>" +
+      r[1].split(" ").map(c => {
+        const p = c.split("|"), s = SUIT[p[1]];
+        return '<span class="' + s[1] + '">' + p[0] + s[0] + "</span>";
+      }).join(" ") + "</td><td class='de'>" + r[2] + "</td></tr>").join("");
+  })();
+
+  // ---------- starting-hand ranking list ----------
+  const hcBody = document.querySelector("#hcTable tbody");
+  const hcSearch = document.getElementById("hcSearch");
+  const hcPlayableBtn = document.getElementById("hcPlayable");
+  const hcCutsBtn = document.getElementById("hcCuts");
+  const hcEmpty = document.getElementById("hcEmpty");
+  let hcPlayableOnly = false, hcShowCuts = true;
+
+  // Seats whose range ends at a given rank, tightest first.
+  const CUT_AT = {};
+  ORDERED.slice().sort((a, b) => a.cutRank - b.cutRank).forEach(p => {
+    (CUT_AT[p.cutRank] = CUT_AT[p.cutRank] || []).push(p);
+  });
+
+  const TYPE_LABEL = { pair: "pocket pair", suited: "suited", offsuit: "offsuit" };
+
+  function renderHoleCards() {
+    const q = hcSearch.value.trim().toLowerCase();
+    const rows = [];
+    let shown = 0;
+
+    FULL_RANK.forEach(h => {
+      const from = openedFrom(h);
+      const hay = h.label.toLowerCase() + " " + TYPE_LABEL[h.kind] + " " + h.tier.toLowerCase() +
+        " " + (from.length ? from[0].name.toLowerCase() : "");
+      const hit = (!q || hay.includes(q)) && (!hcPlayableOnly || h.tier !== "F");
+      if (!hit) return;
+      shown++;
+      rows.push(
+        '<tr data-hand="' + h.label + '" tabindex="0"' + (h.tier === "F" ? ' class="fold"' : "") + ">" +
+        '<td class="r">' + h.rank + "</td>" +
+        '<td class="hd">' + h.label + "</td>" +
+        '<td class="ty">' + TYPE_LABEL[h.kind] + "</td>" +
+        '<td><span class="pill ' + h.tier + '">' + (h.tier === "F" ? "·" : h.tier) + "</span></td>" +
+        '<td class="cb">' + h.combos + "</td>" +
+        '<td class="ch">' + h.score + "</td>" +
+        '<td class="cu">' + h.cumPct.toFixed(1) + "%</td>" +
+        '<td class="sfrom">' + (from.length ? from[0].abbr.replace(/ \(.*\)/, "") : "—") + "</td></tr>"
+      );
+      if (hcShowCuts && !q && CUT_AT[h.rank]) {
+        const names = CUT_AT[h.rank].map(p => p.name).join(" and ");
+        rows.push('<tr class="cut"><td colspan="8">' + names +
+          " open" + (CUT_AT[h.rank].length > 1 ? "" : "s") + " down to here — top " +
+          CUT_AT[h.rank][0].actualPct.toFixed(1) + "% of hands</td></tr>");
+      }
+    });
+
+    hcBody.innerHTML = rows.join("");
+    hcEmpty.hidden = shown > 0;
+  }
+
+  hcBody.addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-hand]");
+    if (!tr) return;
+    pinnedHand = tr.dataset.hand;
+    const h = HANDS.find(x => x.label === pinnedHand);
+    if (h) focusIdx = h.row * 13 + h.col;
+    showTab("chart");
+    render();
+    scrollTo(0, 0);
+  });
+  hcBody.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const tr = e.target.closest("tr[data-hand]");
+    if (!tr) return;
+    e.preventDefault();
+    tr.click();
+  });
+
+  hcSearch.addEventListener("input", renderHoleCards);
+  hcPlayableBtn.addEventListener("click", () => {
+    hcPlayableOnly = !hcPlayableOnly;
+    hcPlayableBtn.setAttribute("aria-pressed", String(hcPlayableOnly));
+    renderHoleCards();
+  });
+  hcCutsBtn.addEventListener("click", () => {
+    hcShowCuts = !hcShowCuts;
+    hcCutsBtn.setAttribute("aria-pressed", String(hcShowCuts));
+    renderHoleCards();
+  });
+  renderHoleCards();
+
+  document.getElementById("hcTop10").textContent =
+    FULL_RANK.slice(0, 10).map((h, i) => (i + 1) + ". " + h.label).join("  ·  ") +
+    " — together about " + FULL_RANK[9].cumPct.toFixed(1) + "% of all hands.";
+
+  // ---------- price calculator ----------
+  (function () {
+    const potIn = document.getElementById("cPot"), pctIn = document.getElementById("cPct");
+    const out = id => document.getElementById(id);
+    const n1 = v => (Math.round(v * 10) / 10).toFixed(1);
+
+    function calc() {
+      const P = Math.max(0.5, parseFloat(potIn.value) || 0.5);
+      const pct = parseInt(pctIn.value, 10);
+      const B = P * pct / 100;          // the bet
+      const win = P + B;                // what a caller stands to win
+      const finalPot = P + 2 * B;       // pot after the call
+      const eq = B / finalPot * 100;    // equity a caller needs
+      const be = B / (P + B) * 100;     // folds a bluff needs
+      const mdf = 100 - be;             // how much they must defend
+
+      out("cPctOut").textContent = pct + "% of pot";
+      const potShare = P / (P + B), betShare = 1 - potShare;
+      const seg = (el, share, word, val) => {
+        el.style.flex = "0 0 " + (share * 100) + "%";
+        el.textContent = share > 0.24 ? word + " " + n1(val) : share > 0.13 ? n1(val) : "";
+      };
+      seg(out("cBarPot"), potShare, "Pot", P);
+      seg(out("cBarBet"), betShare, "Bet", B);
+
+      out("oBet").innerHTML = n1(B) + "<small>bb</small>";
+      out("oPot").textContent = n1(P);
+      out("oOdds").innerHTML = n1(win / B) + "<small>-to-1</small>";
+      out("oRisk").textContent = n1(B);
+      out("oWin").textContent = n1(win);
+      out("oEq").innerHTML = n1(eq) + "<small>%</small>";
+      out("oOuts").innerHTML = Math.round(eq / 4) + "<small> on flop</small>";
+      out("oOutsTurn").textContent = Math.round(eq / 2);
+      out("oBe").innerHTML = n1(be) + "<small>% folds</small>";
+      out("oMdf").innerHTML = n1(mdf) + "<small>%</small>";
+      document.getElementById("cBar").setAttribute("aria-label",
+        "Bet of " + n1(B) + " big blinds into a pot of " + n1(P) + " big blinds");
+    }
+
+    potIn.addEventListener("input", calc);
+    pctIn.addEventListener("input", calc);
+    document.querySelectorAll("[data-size]").forEach(b =>
+      b.addEventListener("click", () => { pctIn.value = b.dataset.size; calc(); }));
+    calc();
+  })();
+
+  // ---------- tabs ----------
+  const TABS = ["chart", "basics", "betting", "holecards", "rankings", "glossary"];
+  function showTab(name) {
+    if (TABS.indexOf(name) < 0) name = "chart";
+    TABS.forEach(t => {
+      document.getElementById("tab-" + t).setAttribute("aria-selected", String(t === name));
+      document.getElementById("view-" + t).hidden = t !== name;
+    });
+  }
+  TABS.forEach(t => document.getElementById("tab-" + t).addEventListener("click", () => showTab(t)));
+
+  // ---------- controls ----------
+  document.getElementById("viewAll").addEventListener("click", () => selectPos(null));
+
+  const texBtn = document.getElementById("texBtn");
+  texBtn.addEventListener("click", () => {
+    const on = root.classList.toggle("texture");
+    texBtn.setAttribute("aria-pressed", String(on));
+  });
+
+  const tvBtn = document.getElementById("tvBtn"), tv = document.getElementById("tableview");
+  tvBtn.addEventListener("click", () => {
+    const on = tv.hidden;
+    tv.hidden = !on;
+    tvBtn.setAttribute("aria-pressed", String(on));
+  });
+
+  const themeBtn = document.getElementById("themeBtn");
+  function setTheme(t) {
+    document.documentElement.dataset.theme = t;
+    themeBtn.textContent = t === "dark" ? "Light mode" : "Dark mode";
+  }
+  setTheme(document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  themeBtn.addEventListener("click", () =>
+    setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+
+  // action-order walkthrough
+  let timer = null, step = 0;
+  const animBtn = document.getElementById("animBtn");
+  animBtn.addEventListener("click", () => timer ? stopAnim() : startAnim());
+  function startAnim() {
+    step = 0; animBtn.classList.add("active"); animBtn.textContent = "Stop";
+    tick();
+    timer = setInterval(tick, 900);
+  }
+  function tick() {
+    document.querySelectorAll(".seat").forEach(s => s.classList.remove("step"));
+    if (step >= 8) { stopAnim(); return; }
+    const p = ORDERED[step];
+    document.querySelector('.seat[data-pos="' + p.id + '"]').classList.add("step");
+    selectedPos = p.id;
+    render();
+    step++;
+  }
+  function stopAnim() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    animBtn.classList.remove("active"); animBtn.textContent = "Play action order";
+    document.querySelectorAll(".seat").forEach(s => s.classList.remove("step"));
+  }
+
+  const fromHash = decodeURIComponent(location.hash.replace("#", ""));
+  if (BY_ID[fromHash.toUpperCase()]) selectedPos = fromHash.toUpperCase();
+  if (TABS.indexOf(fromHash.toLowerCase()) >= 0) {
+    showTab(fromHash.toLowerCase());
+    scrollTo(0, 0);
+  } else showTab("chart");
+
+  render();
+  HANDS[0].el.tabIndex = 0;
+})();
+</script>
+</body>
+</html>
